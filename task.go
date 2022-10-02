@@ -1,0 +1,121 @@
+package nix
+
+import (
+	"errors"
+	"time"
+)
+
+// TaskTimer tells the TaskManager how often a Task should be executed.
+// See the constants for the values accepted by the TaskManager
+type TaskTimer int
+
+const (
+	TASK_TIMER_1_MINUTE TaskTimer   = 1   // A Task with this value will be executed every minute
+	TASK_TIMER_10_MINUTES TaskTimer = 10  // A Task with this value will be executed every 10 minutes
+	TASK_TIMER_30_MINUTES TaskTimer = 30  // A Task with this value will be executed every 30 minutes
+	TASK_TIMER_1_HOUR TaskTimer     = 60  // A Task with this value will be executed every hour
+	TASK_TIMER_INACTIVE TaskTimer   = -1  // A Task with this value will be never be executed automatically
+)
+
+var (
+	ErrTaskNameAlreadyFound = errors.New("taskManager: create: task with this name already registered")
+)
+
+var (
+	ErrProgramNameAlreadyFound = errors.New("taskManager: create: a program with this name already registered")
+)
+
+// TaskManager is a component of the Router that controls the execution of external programs
+// and tasks registered by the user
+type TaskManager struct {
+	router    *Router
+	m         *Mutex
+	programs  map[string]*Program
+	tasks     map[string]*Task
+	ticker1m  *time.Ticker
+	ticker10m *time.Ticker
+	ticker30m *time.Ticker
+	ticker1h  *time.Ticker
+}
+
+// Checks if a new program can be created with the giver name. If there is an
+// already registered program with the same name, it returns false, otherwise
+// it returns true
+func (tm TaskManager) checkProgramName(name string) bool {
+	_, exists := tm.programs[name]
+	return !exists
+}
+
+// Checks if a new task can be created with the giver name. If there is an
+// already registered task with the same name, it returns false, otherwise
+// it returns true
+func (tm TaskManager) checkTaskName(name string) bool {
+	_, exists := tm.tasks[name]
+	return !exists
+}
+
+// Task can be used like a program to execute periodically (or not)
+// a function with the support for a programmed startup and cleanup
+// in case the Router has to shutdown. A task can be called in execution
+// manually and removed from the TaskManager.
+// When registered, the task name must be unique, instead the display name
+// has no restrictions
+type Task struct {
+	name        string
+	DisplayName string
+	startupF    TaskFunc
+	execF       TaskFunc
+	cleanupF    TaskFunc
+	timer       TaskTimer
+}
+
+func (t Task) Name() string {
+	return t.name
+}
+
+// TaskFunc is the function called by the TaskManager when executing a Task
+// function (startup, exec and cleanup). You can access the called Task and
+// the entire Router tree
+type TaskFunc func(router *Router, t *Task)
+
+// TaskInitFunc is used to create a new Task. The implementation is done in this way
+// in order to have the possibility to create and access other valiables needed in all
+// the functions without any weird caviat.
+// Example:
+/* func() {
+	taskInitF := func() (startupF, execF, cleanupF TaskFunc) {
+		var myNeededValiable package.AnyValiabe
+		startupF = func(router *nix.Router, t *nix.Task) {
+			myNeededVariable = package.InitializeNewValiable()
+			// DO SOME OTHER STUFF WITH router AND t
+		}
+		execF = func(router *nix.Router, t *nix.Task) {
+			myNeededVariable.UseValiable()
+			// DO SOME OTHER STUFF WITH router AND t
+		}
+		cleaunpF = func(router *nix.Router, t *nix.Task) {
+			// DO SOME OTHER STUFF WITH router AND t
+			myNeededVariable.DestroyValiable()
+		}
+		return
+	}
+	task := tm.NewTask("myTask", taskInitF, nix.TASK_TIMER_INACTIVE)
+}*/
+type TaskInitFunc func() (startupF, execF, cleanupF TaskFunc)
+
+// NewTask creates and registers a new Task with the given name, displayName, initialization function (f TaskInitFunc)
+// and execution timer, the TaskManager initialize it calling the initF function
+// provided by f (if any)
+func (tm TaskManager) NewTask(name, displayName string, f TaskInitFunc, timer TaskTimer) (*Task, error) {
+	if !tm.checkTaskName(name) {
+		return nil, ErrTaskNameAlreadyFound
+	}
+	startupF, execF, cleanupF := f()
+
+	return &Task {
+		name, displayName,
+		startupF, execF, cleanupF,
+		timer,
+	}, nil
+}
+
