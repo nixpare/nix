@@ -21,16 +21,12 @@ var (
 	ErrTaskNameAlreadyFound = errors.New("taskManager: create: task with this name already registered")
 )
 
-var (
-	ErrProgramNameAlreadyFound = errors.New("taskManager: create: a program with this name already registered")
-)
-
 // TaskManager is a component of the Router that controls the execution of external programs
 // and tasks registered by the user
 type TaskManager struct {
 	router    *Router
 	m         *Mutex
-	programs  map[string]*Program
+	programs  map[string]*program
 	tasks     map[string]*Task
 	ticker1m  *time.Ticker
 	ticker10m *time.Ticker
@@ -41,7 +37,7 @@ type TaskManager struct {
 // Checks if a new program can be created with the giver name. If there is an
 // already registered program with the same name, it returns false, otherwise
 // it returns true
-func (tm TaskManager) checkProgramName(name string) bool {
+func (tm *TaskManager) checkProgramName(name string) bool {
 	_, exists := tm.programs[name]
 	return !exists
 }
@@ -49,7 +45,7 @@ func (tm TaskManager) checkProgramName(name string) bool {
 // Checks if a new task can be created with the giver name. If there is an
 // already registered task with the same name, it returns false, otherwise
 // it returns true
-func (tm TaskManager) checkTaskName(name string) bool {
+func (tm *TaskManager) checkTaskName(name string) bool {
 	_, exists := tm.tasks[name]
 	return !exists
 }
@@ -106,7 +102,7 @@ type TaskInitFunc func() (startupF, execF, cleanupF TaskFunc)
 // NewTask creates and registers a new Task with the given name, displayName, initialization function (f TaskInitFunc)
 // and execution timer, the TaskManager initialize it calling the initF function
 // provided by f (if any)
-func (tm TaskManager) NewTask(name, displayName string, f TaskInitFunc, timer TaskTimer) (*Task, error) {
+func (tm *TaskManager) NewTask(name, displayName string, f TaskInitFunc, timer TaskTimer) (*Task, error) {
 	if !tm.checkTaskName(name) {
 		return nil, ErrTaskNameAlreadyFound
 	}
