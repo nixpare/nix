@@ -1,7 +1,7 @@
 package nix
 
 import (
-	"errors"
+	"fmt"
 	"time"
 )
 
@@ -15,10 +15,6 @@ const (
 	TaskTimer30Minutes TaskTimer = 30 // A Task with this value will be executed every 30 minutes
 	TaskTimer1Hour     TaskTimer = 60 // A Task with this value will be executed every hour
 	TaskTimerInactive  TaskTimer = -1 // A Task with this value will be never be executed automatically
-)
-
-var (
-	ErrTaskNameAlreadyFound = errors.New("taskManager: create: task with this name already registered")
 )
 
 // TaskManager is a component of the Router that controls the execution of external programs
@@ -104,7 +100,7 @@ type TaskInitFunc func() (startupF, execF, cleanupF TaskFunc)
 // provided by f (if any)
 func (tm *TaskManager) NewTask(name, displayName string, f TaskInitFunc, timer TaskTimer) (*Task, error) {
 	if !tm.checkTaskName(name) {
-		return nil, ErrTaskNameAlreadyFound
+		return nil, fmt.Errorf("taskManager: create: task %s already registered", name)
 	}
 	startupF, execF, cleanupF := f()
 

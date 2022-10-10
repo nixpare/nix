@@ -100,10 +100,10 @@ func NewLogger(out io.Writer) *Logger {
 
 // log first creates a new Log, appends it to the list of Logs and then prints it
 // to out
-func (l Logger) log(level LogLevel, userGenerated bool, message, extra string) {
+func (l Logger) log(level LogLevel, userGenerated bool, message string, extra ...string) {
 	log := Log{
 		level, time.Now(),
-		message, extra,
+		message, strings.Join(extra, ""),
 		userGenerated,
 	}
 
@@ -114,5 +114,5 @@ func (l Logger) log(level LogLevel, userGenerated bool, message, extra string) {
 // Log creates a new Log with the given arguments as a user-generated log, adds it to
 // the list of logs and then prints it to the io.Writer
 func (l Logger) Log(level LogLevel, message string, extra ...string) {
-	l.log(level, true, message, strings.Join(extra, ""))
+	l.log(level, true, message, extra...)
 }
