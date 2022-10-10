@@ -10,11 +10,11 @@ import (
 type TaskTimer int
 
 const (
-	TASK_TIMER_1_MINUTE TaskTimer   = 1   // A Task with this value will be executed every minute
-	TASK_TIMER_10_MINUTES TaskTimer = 10  // A Task with this value will be executed every 10 minutes
-	TASK_TIMER_30_MINUTES TaskTimer = 30  // A Task with this value will be executed every 30 minutes
-	TASK_TIMER_1_HOUR TaskTimer     = 60  // A Task with this value will be executed every hour
-	TASK_TIMER_INACTIVE TaskTimer   = -1  // A Task with this value will be never be executed automatically
+	TaskTimer1Minute   TaskTimer = 1  // A Task with this value will be executed every minute
+	TaskTimer10Minutes TaskTimer = 10 // A Task with this value will be executed every 10 minutes
+	TaskTimer30Minutes TaskTimer = 30 // A Task with this value will be executed every 30 minutes
+	TaskTimer1Hour     TaskTimer = 60 // A Task with this value will be executed every hour
+	TaskTimerInactive  TaskTimer = -1 // A Task with this value will be never be executed automatically
 )
 
 var (
@@ -52,7 +52,7 @@ func (tm *TaskManager) checkTaskName(name string) bool {
 
 // Task can be used like a program to execute periodically (or not)
 // a function with the support for a programmed startup and cleanup
-// in case the Router has to shutdown. A task can be called in execution
+// in case the Router has to shut down. A task can be called in execution
 // manually and removed from the TaskManager.
 // When registered, the task name must be unique, instead the display name
 // has no restrictions
@@ -95,7 +95,7 @@ type TaskFunc func(router *Router, t *Task)
 		}
 		return
 	}
-	task := tm.NewTask("myTask", taskInitF, nix.TASK_TIMER_INACTIVE)
+	task := tm.NewTask("myTask", taskInitF, nix.TaskTimerInactive)
 }*/
 type TaskInitFunc func() (startupF, execF, cleanupF TaskFunc)
 
@@ -108,10 +108,9 @@ func (tm *TaskManager) NewTask(name, displayName string, f TaskInitFunc, timer T
 	}
 	startupF, execF, cleanupF := f()
 
-	return &Task {
+	return &Task{
 		name, displayName,
 		startupF, execF, cleanupF,
 		timer,
 	}, nil
 }
-

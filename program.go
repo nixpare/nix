@@ -10,23 +10,33 @@ import (
 var (
 	ErrProgramNameAlreadyFound = errors.New("taskManager: create: a program with this name already registered")
 	ErrInvalidWorkingDirectory = errors.New("taskManager: create: invalid working directory")
-	ErrProgramNotFound = errors.New("taskManager: program not found")
-	ErrProgramAlreadyRunning = errors.New("taskManager: start: program already running")
-	ErrProgramAlreadyStopped = errors.New("taskManager: stop: program already stopped")
-	ErrProgramStartup = errors.New("taskManager: start: error during startup")
-	ErrProgramRestart = errors.New("taskManager: restart")
+	ErrProgramNotFound         = errors.New("taskManager: program not found")
+	ErrProgramAlreadyRunning   = errors.New("taskManager: start: program already running")
+	ErrProgramAlreadyStopped   = errors.New("taskManager: stop: program already stopped")
+	ErrProgramStop             = errors.New("taskManager: stop: error during stop")
+	ErrProgramWait             = errors.New("taskManager: stop: error waiting program to exit")
+	ErrProgramStartup          = errors.New("taskManager: start: error during startup")
+	ErrProgramRestart          = errors.New("taskManager: restart")
 )
 
+// Wraps the default *exec.Cmd structure and makes easier the
+// access to redirect the standard output and check when it closes.
+// It's not supposed to run programs that necessitate any input from
+// Standard Input. Another limitation is that graceful shutdown is not
+// implemented yet due to Windows limitations
 type program struct {
-	name    string
-	dir string
+	tm       *TaskManager
+	name     string
+	dir      string
 	execName string
-	args  []string
-	exitC 	chan struct{}
-	exec    *exec.Cmd
+	args     []string
+	exitC    chan struct{}
+	exec     *exec.Cmd
 	redirect *os.File
 }
 
+// Starts the program and with a goroutine waits for its
+// termination
 func (p *program) start() error {
 	p.exec = exec.Command(p.execName, p.args...)
 	if p.dir != "" {
@@ -44,27 +54,48 @@ func (p *program) start() error {
 		return err
 	}
 
-	go p.wait()
+	go func() {
+		err := p.wait()
+		if err != nil {
+			p.tm.router.Logger.logln(LogLevelError, false, err)
+		}
+	}()
 	return nil
 }
 
-func (p *program) wait() {
+// Waits for the process with the already provided function by *os.Process,
+// then sends a signal to the channel in order to be listened
+func (p *program) wait() error {
 	if p.exec.Process == nil {
-		return
+		return ErrProgramAlreadyStopped
 	}
 
-	p.exec.Wait()
+	err := p.exec.Wait()
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrProgramWait, err)
+	}
+
 	p.exec = nil
 	p.exitC <- struct{}{}
+	return nil
 }
 
-func (p *program) stop() {
-	if p.exec != nil {
-		p.exec.Process.Kill()
-		<- p.exitC
+// Forcibly kills the process
+func (p *program) stop() error {
+	if p.exec == nil {
+		return ErrProgramAlreadyStopped
 	}
+
+	err := p.exec.Process.Kill()
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrProgramStop, err)
+	}
+
+	<-p.exitC
+	return nil
 }
 
+// Reports whether the program is still running
 func (p *program) isOnline() bool {
 	return p.exec != nil
 }
@@ -79,6 +110,7 @@ func (p *program) String() string {
 	return fmt.Sprintf("%s (%s)", p.name, state)
 }
 
+// NewProgram creates
 func (tm *TaskManager) NewProgram(name, dir string, redirect bool, execName string, args ...string) error {
 	if !tm.checkProgramName(name) {
 		return ErrProgramNameAlreadyFound
@@ -92,16 +124,20 @@ func (tm *TaskManager) NewProgram(name, dir string, redirect bool, execName stri
 		return fmt.Errorf("%w: dir is not a directory", ErrInvalidWorkingDirectory)
 	}
 
-	p := &program {
-		name: name,
-		dir: dir,
+	p := &program{
+		tm:       tm,
+		dir:      dir,
 		execName: execName,
-		args: args,
-		exitC: make(chan struct{}),
+		args:     args,
+		exitC:    make(chan struct{}),
 	}
 
 	if redirect {
-		p.redirect = tm.router.logFile
+		if f, ok := tm.router.Logger.out.(*os.File); ok {
+			p.redirect = f
+		} else {
+			return fmt.Errorf("tm: create: redirect not valid: router logger output is not of type *os.File")
+		}
 	}
 
 	tm.programs[name] = p
@@ -136,8 +172,7 @@ func (tm *TaskManager) StopProgram(name string) error {
 		return fmt.Errorf("%w - %s", ErrProgramAlreadyStopped, name)
 	}
 
-	p.stop()
-	return nil
+	return p.stop()
 }
 
 func (tm *TaskManager) RestartExec(name string) error {
@@ -170,6 +205,9 @@ func (tm *TaskManager) ProgramIsRunning(name string) (bool, error) {
 
 func (tm *TaskManager) StopAllPrograms() {
 	for _, p := range tm.programs {
-		p.stop()
+		err := p.stop()
+		if err != nil {
+			tm.router.Logger.logln(LogLevelError, false, err)
+		}
 	}
 }
