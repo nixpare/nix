@@ -185,9 +185,9 @@ func (tm *TaskManager) StartProgram(name string) error {
 
 	go func() {
 		for err := range errChan {
-			tm.router.Logger.log(
-				LogLevelError, false,
-				fmt.Sprintf("taskManager: error during execution: %v", err),
+			tm.router.Logger.Log(
+				LogLevelError,
+				fmt.Sprintf("taskManager: program %s execution error: %v", name, err),
 			)
 		}
 	}()
@@ -203,7 +203,12 @@ func (tm *TaskManager) StopProgram(name string) error {
 		return err
 	}
 
-	return p.stop()
+	err = p.stop()
+	if err != nil {
+		//return fmt.Errorf("taskManager: %w", err)
+		return err
+	}
+	return nil
 }
 
 // KillProgram forcibly kills the program with the given name
@@ -213,7 +218,11 @@ func (tm *TaskManager) KillProgram(name string) error {
 		return err
 	}
 
-	return p.kill()
+	err = p.kill()
+	if err != nil {
+		return fmt.Errorf("taskManager: %w", err)
+	}
+	return nil
 }
 
 // RestartProgram first gracefully stops the program (not implemented,
@@ -285,9 +294,9 @@ func (tm *TaskManager) StopAllPrograms() {
 		if p.isRunning() {
 			err := p.stop()
 			if err != nil {
-				tm.router.Logger.log(
-					LogLevelError, false,
-					err.Error(),
+				tm.router.Logger.Log(
+					LogLevelError,
+					fmt.Sprintf("taskManager: %v", err),
 				)
 			}
 		}

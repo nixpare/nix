@@ -23,6 +23,7 @@ const (
 type TaskManager struct {
 	router    *Router
 	m         *sync.Mutex
+	sc        *Scheduler
 	running   bool
 	programs  map[string]*program
 	tasks     map[string]*Task
@@ -34,11 +35,13 @@ type TaskManager struct {
 
 func (r *Router) newTaskManager() *TaskManager {
 	tm := &TaskManager{
-		r, new(sync.Mutex), true,
+		r, new(sync.Mutex), nil, false,
 		make(map[string]*program), make(map[string]*Task),
 		time.NewTicker(time.Minute), time.NewTicker(time.Minute * 10),
 		time.NewTicker(time.Minute * 30), time.NewTicker(time.Hour),
 	}
+
+	tm.sc = NewScheduler(tm.router.Logger, "Task Manager")
 
 	go func() {
 		for tm.running {
@@ -59,11 +62,11 @@ func (r *Router) newTaskManager() *TaskManager {
 }
 
 func (tm *TaskManager) runTasksWithTimer(timer TaskTimer) {
-	for _, t := range tm.tasks {
+	/*for _, t := range tm.tasks {
 		go func() {
 			err := t.execF(tm, t)
 		}()
-	}
+	}*/
 }
 
 // Checks if a new program can be created with the giver name. If there is an
@@ -136,9 +139,9 @@ type TaskInitFunc func() (startupF, execF, cleanupF TaskFunc)
 // function (f TaskInitFunc) and execution timer, the TaskManager initialize it calling the
 // startupF function provided by f (if any). If it returns an error the Task will not be
 // registered in the TaskManager.
-func (tm *TaskManager) NewTask(name, displayName string, f TaskInitFunc, timer TaskTimer, forceQuit bool) (*Task, error) {
+func (tm *TaskManager) NewTask(name, displayName string, f TaskInitFunc, timer TaskTimer, forceQuit bool) error {
 	if !tm.checkTaskName(name) {
-		return nil, fmt.Errorf("taskManager: create: task %s already registered", name)
+		return fmt.Errorf("taskManager: create: task %s already registered", name)
 	}
 	startupF, execF, cleanupF := f()
 
@@ -151,8 +154,9 @@ func (tm *TaskManager) NewTask(name, displayName string, f TaskInitFunc, timer T
 	if t.startupF != nil {
 		err := t.startupF(tm, t)
 		if err != nil {
-			return nil, fmt.Errorf("taskManager: failed initializing task %s: %w", name, err)
+			return fmt.Errorf("taskManager: failed initializing task %s: %w", name, err)
 		}
 	}
 
+	return nil
 }

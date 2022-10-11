@@ -9,15 +9,16 @@ type Router struct {
 	servers   map[int]*Server
 	cleanupF  func() error
 	startTime time.Time
-	Logger    *Logger
+	Logger    Logger
 	TaskMgr   TaskManager
 }
 
 func NewRouter(out io.Writer) *Router {
-	r := &Router {
-		servers: make(map[int]*Server),
+	r := &Router{
+		servers:   make(map[int]*Server),
 		startTime: time.Now(),
-		Logger: newLogger(out),
-		TaskMgr:
+		Logger:    NewLogger(out),
 	}
+
+	return r
 }
