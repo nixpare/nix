@@ -2,6 +2,7 @@ package nix
 
 import (
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -21,13 +22,48 @@ const (
 // and tasks registered by the user
 type TaskManager struct {
 	router    *Router
-	m         *Mutex
+	m         *sync.Mutex
+	running   bool
 	programs  map[string]*program
 	tasks     map[string]*Task
 	ticker1m  *time.Ticker
 	ticker10m *time.Ticker
 	ticker30m *time.Ticker
 	ticker1h  *time.Ticker
+}
+
+func (r *Router) newTaskManager() *TaskManager {
+	tm := &TaskManager{
+		r, new(sync.Mutex), true,
+		make(map[string]*program), make(map[string]*Task),
+		time.NewTicker(time.Minute), time.NewTicker(time.Minute * 10),
+		time.NewTicker(time.Minute * 30), time.NewTicker(time.Hour),
+	}
+
+	go func() {
+		for tm.running {
+			select {
+			case <-tm.ticker1m.C:
+				tm.runTasksWithTimer(TaskTimer1Minute)
+			case <-tm.ticker10m.C:
+				tm.runTasksWithTimer(TaskTimer10Minutes)
+			case <-tm.ticker30m.C:
+				tm.runTasksWithTimer(TaskTimer30Minutes)
+			case <-tm.ticker1h.C:
+				tm.runTasksWithTimer(TaskTimer1Hour)
+			}
+		}
+	}()
+
+	return tm
+}
+
+func (tm *TaskManager) runTasksWithTimer(timer TaskTimer) {
+	for _, t := range tm.tasks {
+		go func() {
+			err := t.execF(tm, t)
+		}()
+	}
 }
 
 // Checks if a new program can be created with the giver name. If there is an
@@ -51,7 +87,7 @@ func (tm *TaskManager) checkTaskName(name string) bool {
 // in case the Router has to shut down. A task can be called in execution
 // manually and removed from the TaskManager.
 // When registered, the task name must be unique, instead the display name
-// has no restrictions
+// has no restrictions.
 type Task struct {
 	name        string
 	DisplayName string
@@ -59,6 +95,7 @@ type Task struct {
 	execF       TaskFunc
 	cleanupF    TaskFunc
 	timer       TaskTimer
+	forceQuit   bool
 }
 
 func (t Task) Name() string {
@@ -67,8 +104,8 @@ func (t Task) Name() string {
 
 // TaskFunc is the function called by the TaskManager when executing a Task
 // function (startup, exec and cleanup). You can access the called Task and
-// the entire Router tree
-type TaskFunc func(router *Router, t *Task)
+// the entire TaskManager tree
+type TaskFunc func(tm *TaskManager, t *Task) error
 
 // TaskInitFunc is used to create a new Task. The implementation is done in this way
 // in order to have the possibility to create and access other valiables needed in all
@@ -95,18 +132,27 @@ type TaskFunc func(router *Router, t *Task)
 }*/
 type TaskInitFunc func() (startupF, execF, cleanupF TaskFunc)
 
-// NewTask creates and registers a new Task with the given name, displayName, initialization function (f TaskInitFunc)
-// and execution timer, the TaskManager initialize it calling the initF function
-// provided by f (if any)
-func (tm *TaskManager) NewTask(name, displayName string, f TaskInitFunc, timer TaskTimer) (*Task, error) {
+// NewTask creates and registers a new Task with the given name, displayName, initialization
+// function (f TaskInitFunc) and execution timer, the TaskManager initialize it calling the
+// startupF function provided by f (if any). If it returns an error the Task will not be
+// registered in the TaskManager.
+func (tm *TaskManager) NewTask(name, displayName string, f TaskInitFunc, timer TaskTimer, forceQuit bool) (*Task, error) {
 	if !tm.checkTaskName(name) {
 		return nil, fmt.Errorf("taskManager: create: task %s already registered", name)
 	}
 	startupF, execF, cleanupF := f()
 
-	return &Task{
+	t := &Task{
 		name, displayName,
 		startupF, execF, cleanupF,
-		timer,
-	}, nil
+		timer, forceQuit,
+	}
+
+	if t.startupF != nil {
+		err := t.startupF(tm, t)
+		if err != nil {
+			return nil, fmt.Errorf("taskManager: failed initializing task %s: %w", name, err)
+		}
+	}
+
 }

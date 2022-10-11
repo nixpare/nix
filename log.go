@@ -85,7 +85,7 @@ type Logger struct {
 // NewLogger creates a new Logger with the given io.Writer out. If out
 // is nil the Logger will use os.Stdout, so if you do not want to write
 // any file or buffer you should open a file with os.DevNull
-func NewLogger(out io.Writer) *Logger {
+func newLogger(out io.Writer) *Logger {
 	logger := &Logger{}
 	logger.logs = make([]Log, 0)
 

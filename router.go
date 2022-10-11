@@ -1,6 +1,7 @@
 package nix
 
 import (
+	"io"
 	"time"
 )
 
@@ -10,4 +11,13 @@ type Router struct {
 	startTime time.Time
 	Logger    *Logger
 	TaskMgr   TaskManager
+}
+
+func NewRouter(out io.Writer) *Router {
+	r := &Router {
+		servers: make(map[int]*Server),
+		startTime: time.Now(),
+		Logger: newLogger(out),
+		TaskMgr:
+	}
 }
