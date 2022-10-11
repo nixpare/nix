@@ -2,7 +2,6 @@ package nix
 
 import (
 	"fmt"
-	"sync"
 	"time"
 )
 
@@ -22,7 +21,7 @@ const (
 // and tasks registered by the user
 type TaskManager struct {
 	router    *Router
-	m         *sync.Mutex
+	exitC     chan struct{}
 	sc        *Scheduler
 	running   bool
 	programs  map[string]*program
@@ -34,14 +33,17 @@ type TaskManager struct {
 }
 
 func (r *Router) newTaskManager() *TaskManager {
-	tm := &TaskManager{
-		r, new(sync.Mutex), nil, false,
+	return &TaskManager{
+		r, make(chan struct{}), NewScheduler(r.Logger, "Task Manager"), false,
 		make(map[string]*program), make(map[string]*Task),
 		time.NewTicker(time.Minute), time.NewTicker(time.Minute * 10),
 		time.NewTicker(time.Minute * 30), time.NewTicker(time.Hour),
 	}
+}
 
-	tm.sc = NewScheduler(tm.router.Logger, "Task Manager")
+func (tm *TaskManager) start() {
+	tm.running = true
+	go tm.sc.Start()
 
 	go func() {
 		for tm.running {
@@ -56,17 +58,32 @@ func (r *Router) newTaskManager() *TaskManager {
 				tm.runTasksWithTimer(TaskTimer1Hour)
 			}
 		}
+
+		tm.sc.Wait()
 	}()
 
-	return tm
+	for range tm.exitC {
+	}
+	tm.running = false
+}
+
+func (tm *TaskManager) stop() {
+	for name := range tm.tasks {
+		tm.sc.Go(func(sc *Scheduler) error {
+			return tm.RemoveTask(name)
+		}, name+"(cleanup)")
+	}
+	close(tm.exitC)
 }
 
 func (tm *TaskManager) runTasksWithTimer(timer TaskTimer) {
-	/*for _, t := range tm.tasks {
-		go func() {
-			err := t.execF(tm, t)
-		}()
-	}*/
+	for _, t := range tm.tasks {
+		if t.timer == timer {
+			tm.sc.Go(func(sc *Scheduler) error {
+				return t.execF(tm, t)
+			}, t.name+("exec"))
+		}
+	}
 }
 
 // Checks if a new program can be created with the giver name. If there is an
@@ -83,6 +100,17 @@ func (tm *TaskManager) checkProgramName(name string) bool {
 func (tm *TaskManager) checkTaskName(name string) bool {
 	_, exists := tm.tasks[name]
 	return !exists
+}
+
+// Checks if a new task can be created with the giver name. If there is an
+// already registered task with the same name, it returns false, otherwise
+// it returns true
+func (tm *TaskManager) getTask(name string) (*Task, error) {
+	if !tm.checkTaskName(name) {
+		return nil, fmt.Errorf("taskManager: task %s not found", name)
+	}
+
+	return tm.tasks[name], nil
 }
 
 // Task can be used like a program to execute periodically (or not)
@@ -159,4 +187,50 @@ func (tm *TaskManager) NewTask(name, displayName string, f TaskInitFunc, timer T
 	}
 
 	return nil
+}
+
+// ChangeTaskTimer changes the Task timer to the given one
+func (tm *TaskManager) ChangeTaskTimer(name string, timer TaskTimer) error {
+	t, err := tm.getTask(name)
+	if err != nil {
+		return err
+	}
+
+	t.timer = timer
+	return nil
+}
+
+// ExecuteTask runs the Task immediatly
+func (tm *TaskManager) ExecuteTask(name string, timer TaskTimer) error {
+	t, err := tm.getTask(name)
+	if err != nil {
+		return err
+	}
+
+	t.timer = timer
+	return nil
+}
+
+// RemoveTask runs the cleanup function provided and removes the Task from
+// the TaskManager
+func (tm *TaskManager) RemoveTask(name string) error {
+	t, err := tm.getTask(name)
+	if err != nil {
+		return err
+	}
+
+	err = t.cleanupF(tm, t)
+	delete(tm.tasks, name)
+	return err
+}
+
+// GetTasksNames returns all the names of the registered tasks in the
+// TaskManager
+func (tm *TaskManager) GetTasksNames() []string {
+	names := make([]string, 0, len(tm.tasks))
+	for name := range tm.tasks {
+		names = append(names, name)
+	}
+
+	return names
 }
