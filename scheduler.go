@@ -7,27 +7,6 @@ import (
 	"sync"
 )
 
-// Scheduler can be used to create new goroutine functions that are
-// panic-safe, it means that if something wrong happens and that
-// goroutines panics, the Scheduler uses the Logger to report the panic
-// with a reference to the goroutines involved and writing to the extra
-// field the stack dump associated with the panic.
-// The scheduler is also meant to be used for background activities that
-// may encounter some errors, which are handled by the Logger.
-// It has an identifier name included user to log any error or panic (see
-// Scheduler.Name)
-type Scheduler struct {
-	name      string
-	depth     int
-	parent    *sync.WaitGroup
-	child     *sync.WaitGroup
-	logWG     *sync.WaitGroup
-	exited    bool
-	panicChan chan routinePanic
-	errChan   chan routineError
-	logger    Logger
-}
-
 // routineError is used by the Logger to log errors occurred during
 // a Scheduler routine
 type routineError struct {
@@ -43,6 +22,30 @@ type routinePanic struct {
 	sc    *Scheduler
 }
 
+// Scheduler can be used to create new goroutine functions that are
+// panic-safe, it means that if something wrong happens and that
+// goroutines panics, the Scheduler uses the Logger to report the panic
+// with a reference to the goroutines involved and writing to the extra
+// field the stack dump associated with the panic.
+// The scheduler is also meant to be used for background activities that
+// may encounter some errors, which are handled by the Logger.
+// It has an identifier name included user to log any error or panic (see
+// Scheduler.Name)
+type Scheduler struct {
+	name            string
+	depth           int
+	m               *sync.Mutex
+	parent          *sync.WaitGroup
+	child           *sync.WaitGroup
+	logWG           *sync.WaitGroup
+	exitC           chan struct{}
+	mainScheduler   bool
+	firstWaitCalled bool
+	panicChan       chan routinePanic
+	errChan         chan routineError
+	logger          Logger
+}
+
 // NewScheduler creates the main Scheduler that can be used to istanciate
 // new child schedulers with the methods Scheduler.Go and Scheduler.GoNB.
 // After creating the main Scheduler, before any call to other functions
@@ -50,11 +53,14 @@ type routinePanic struct {
 // for `Scheduler.Wait()` in order to block
 func NewScheduler(logger Logger, name string) *Scheduler {
 	return &Scheduler{
-		name:      name,
-		panicChan: make(chan routinePanic, 10),
-		errChan:   make(chan routineError, 10),
-		logWG:     new(sync.WaitGroup),
-		logger:    logger,
+		name:          name,
+		m:             new(sync.Mutex),
+		panicChan:     make(chan routinePanic, 10),
+		errChan:       make(chan routineError, 10),
+		logWG:         new(sync.WaitGroup),
+		exitC:         make(chan struct{}),
+		mainScheduler: true,
+		logger:        logger,
 	}
 }
 
@@ -65,51 +71,120 @@ func (sc *Scheduler) Start() {
 		for {
 			select {
 			case rPanic := <-sc.panicChan:
-				sc.logger.Log(
-					LogLevelFatal,
-					fmt.Sprintf("routine panic (%v): %v", rPanic.sc, rPanic.err),
-					rPanic.stack,
-				)
-				fmt.Println(rPanic.stack)
-				sc.logWG.Done()
+				if rPanic.err != nil {
+					sc.logger.Log(
+						LogLevelFatal,
+						fmt.Sprintf("routine panic (%v): %v", rPanic.sc, rPanic.err),
+						rPanic.stack,
+					)
+					sc.logWG.Done()
+				}
 
 			case rError := <-sc.errChan:
-				sc.logger.Log(
-					LogLevelError,
-					fmt.Sprintf("routine error (%v): %v", rError.sc, rError.err),
-				)
-				sc.logWG.Done()
+				if rError.err != nil {
+					sc.logger.Log(
+						LogLevelError,
+						fmt.Sprintf("routine error (%v): %v", rError.sc, rError.err),
+					)
+					sc.logWG.Done()
+				}
 			}
 		}
 	}()
 
-	sc.Wait()
-
-	close(sc.panicChan)
-	close(sc.errChan)
+	for range sc.exitC {
+	}
 }
 
 // Wait waits for all routines to terminate and for all the
 // logs to be handled
 func (sc *Scheduler) Wait() {
+	if sc.mainScheduler {
+		sc.mainWait()
+	} else {
+		sc.childWait()
+	}
+}
+
+// mainWait is used ONLY by the main handler after the Scheduler.Start method,
+// to listen to the termination of all the child processes use the Scheduler.Wait
+// method
+func (sc *Scheduler) mainWait() {
+	sc.m.Lock()
+
+	var firstWait bool
+	if !sc.firstWaitCalled {
+		sc.firstWaitCalled = true
+		firstWait = true
+	}
+
+	sc.m.Unlock()
+
+	if !firstWait {
+		for range sc.exitC {
+		}
+		return
+	}
+
+	if sc.child != nil {
+		sc.child.Wait()
+	}
+	sc.logWG.Wait()
+
+	close(sc.exitC)
+	close(sc.panicChan)
+	close(sc.errChan)
+}
+
+func (sc *Scheduler) childWait() {
+	sc.m.Lock()
+
+	var firstWait bool
+	if !sc.firstWaitCalled {
+		sc.firstWaitCalled = true
+		firstWait = true
+	}
+
+	sc.m.Unlock()
+
+	if !firstWait {
+		for range sc.exitC {
+		}
+		return
+	}
+
 	if sc.child != nil {
 		sc.child.Wait()
 	}
 
-	sc.logWG.Wait()
+	close(sc.exitC)
 }
 
 // exit waits for the childs to exit (if any) and then tells the parent
-// its termination
+// its termination. This is not called by the main scheduler
 func (sc *Scheduler) exit() {
-	if !sc.exited {
-		sc.exited = true
+	sc.m.Lock()
+	sc.m.Unlock()
 
-		if sc.child != nil {
-			sc.child.Wait()
-		}
-		sc.parent.Done()
+	if sc.child != nil {
+		sc.child.Wait()
 	}
+
+	sc.parent.Done()
+}
+
+// RoutineFunc is the function type used for every new Routine generated.
+// The parameter sc is the new child Scheduler generated by the calling one
+// and can be used to generate other childs and routines. The error return value
+// will be logged with the Logger of the main Scheduler is non-nil
+type RoutineFunc func(routine Routine) error
+
+// Routine is the interface implemented by the Scheduler used to hide some
+// critical methods that must be called only on the main Scheduler
+type Routine interface {
+	Go(RoutineFunc, ...string)
+	GoNB(RoutineFunc, ...string)
+	Wait()
 }
 
 // Name returns the routine identifier, that can be one of theese combinations:
@@ -180,23 +255,22 @@ func (sc *Scheduler) newChild(name string) *Scheduler {
 	return &Scheduler{
 		name:      newName,
 		depth:     newDepth,
+		m:         new(sync.Mutex),
 		parent:    sc.child,
 		logWG:     sc.logWG,
+		exitC:     make(chan struct{}),
 		panicChan: sc.panicChan,
 		errChan:   sc.errChan,
 	}
 }
 
-// RoutineFunc is the function type used for every new routine generated.
-// The parameter sc is the new child Scheduler generated by the calling one
-// and can be used to generate other childs and routines. The error return value
-// will be logged with the Logger of the main Scheduler is non-nil
-type RoutineFunc func(sc *Scheduler) error
-
 // Go creates a new routine and Scheduler with the provided name (can be omitted).
 // This will create a blocking routine and the parent scheduler will wait for its
 // termination
 func (sc *Scheduler) Go(f RoutineFunc, name ...string) {
+	sc.m.Lock()
+	defer sc.m.Unlock()
+
 	if sc.child == nil {
 		sc.child = new(sync.WaitGroup)
 	}
@@ -218,7 +292,10 @@ func (sc *Scheduler) GoNB(f RoutineFunc, name ...string) {
 func (sc *Scheduler) goChildFunc(f RoutineFunc) {
 	defer sc.recoverAndDefer()
 
-	err := f(sc)
+	var err error
+	if f != nil {
+		err = f(sc)
+	}
 	if err != nil {
 		sc.logWG.Add(1)
 		sc.errChan <- routineError{err, sc}

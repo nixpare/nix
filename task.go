@@ -32,8 +32,8 @@ type TaskManager struct {
 	ticker1h  *time.Ticker
 }
 
-func (r *Router) newTaskManager() *TaskManager {
-	return &TaskManager{
+func (r *Router) newTaskManager() {
+	r.TaskMgr = &TaskManager{
 		r, make(chan struct{}), NewScheduler(r.Logger, "Task Manager"), false,
 		make(map[string]*program), make(map[string]*Task),
 		time.NewTicker(time.Minute), time.NewTicker(time.Minute * 10),
@@ -69,17 +69,22 @@ func (tm *TaskManager) start() {
 
 func (tm *TaskManager) stop() {
 	for name := range tm.tasks {
-		tm.sc.Go(func(sc *Scheduler) error {
+		tm.sc.Go(func(routine Routine) error {
 			return tm.RemoveTask(name)
 		}, name+"(cleanup)")
 	}
 	close(tm.exitC)
 }
 
+func (tm *TaskManager) wait() {
+	for range tm.exitC {
+	}
+}
+
 func (tm *TaskManager) runTasksWithTimer(timer TaskTimer) {
 	for _, t := range tm.tasks {
 		if t.timer == timer {
-			tm.sc.Go(func(sc *Scheduler) error {
+			tm.sc.Go(func(routine Routine) error {
 				return t.execF(tm, t)
 			}, t.name+("exec"))
 		}
