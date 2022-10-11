@@ -38,9 +38,11 @@ type Scheduler struct {
 	parent          *sync.WaitGroup
 	child           *sync.WaitGroup
 	logWG           *sync.WaitGroup
+	waitC           chan struct{}
 	exitC           chan struct{}
 	mainScheduler   bool
 	firstWaitCalled bool
+	stopping        bool
 	panicChan       chan routinePanic
 	errChan         chan routineError
 	logger          Logger
@@ -50,7 +52,7 @@ type Scheduler struct {
 // new child schedulers with the methods Scheduler.Go and Scheduler.GoNB.
 // After creating the main Scheduler, before any call to other functions
 // you HAVE to call for `go Scheduler.Start()` and then at the end call
-// for `Scheduler.Wait()` in order to block
+// for `Scheduler.Stop()` in order to block and cleanup
 func NewScheduler(logger Logger, name string) *Scheduler {
 	return &Scheduler{
 		name:          name,
@@ -94,6 +96,10 @@ func (sc *Scheduler) Start() {
 
 	for range sc.exitC {
 	}
+
+	// Cleanup
+	close(sc.panicChan)
+	close(sc.errChan)
 }
 
 // Wait waits for all routines to terminate and for all the
@@ -104,6 +110,19 @@ func (sc *Scheduler) Wait() {
 	} else {
 		sc.childWait()
 	}
+}
+
+// Stop tells the scheduler to not accept any new routine, waits for
+// any existing routine to terminate and does cleanup
+func (sc *Scheduler) Stop() {
+	sc.m.Lock()
+	sc.stopping = true
+	sc.m.Unlock()
+
+	sc.Wait()
+	sc.logWG.Wait()
+
+	close(sc.exitC)
 }
 
 // mainWait is used ONLY by the main handler after the Scheduler.Start method,
@@ -121,7 +140,8 @@ func (sc *Scheduler) mainWait() {
 	sc.m.Unlock()
 
 	if !firstWait {
-		for range sc.exitC {
+		fmt.Println(ChanIsOpened(sc.waitC))
+		for range sc.waitC {
 		}
 		return
 	}
@@ -129,13 +149,18 @@ func (sc *Scheduler) mainWait() {
 	if sc.child != nil {
 		sc.child.Wait()
 	}
-	sc.logWG.Wait()
 
-	close(sc.exitC)
-	close(sc.panicChan)
-	close(sc.errChan)
+	sc.m.Lock()
+
+	if ChanIsOpened(sc.waitC) {
+		close(sc.waitC)
+	}
+	sc.firstWaitCalled = false
+
+	sc.m.Unlock()
 }
 
+// This function is not called by the main Scheduler
 func (sc *Scheduler) childWait() {
 	sc.m.Lock()
 
@@ -270,6 +295,14 @@ func (sc *Scheduler) newChild(name string) *Scheduler {
 func (sc *Scheduler) Go(f RoutineFunc, name ...string) {
 	sc.m.Lock()
 	defer sc.m.Unlock()
+
+	if sc.mainScheduler && sc.stopping {
+		return
+	}
+
+	if sc.mainScheduler && !ChanIsOpened(sc.waitC) {
+		sc.waitC = make(chan struct{})
+	}
 
 	if sc.child == nil {
 		sc.child = new(sync.WaitGroup)

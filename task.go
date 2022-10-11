@@ -1,7 +1,9 @@
 package nix
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -74,14 +76,15 @@ func (tm *TaskManager) start() {
 }
 
 func (tm *TaskManager) stop() {
-	for n := range tm.tasks {
-		name := n
-		tm.sc.Go(func(routine Routine) error {
-			return tm.RemoveTask(name)
-		}, name+"(cleanup)")
+	for name := range tm.tasks {
+		func(name string) {
+			tm.sc.Go(func(routine Routine) error {
+				return tm.RemoveTask(name)
+			}, name+"(cleanup)")
+		}(name)
 	}
 
-	tm.sc.Wait()
+	tm.sc.Stop()
 	close(tm.exitC)
 }
 
@@ -93,11 +96,11 @@ func (tm *TaskManager) wait() {
 func (tm *TaskManager) runTasksWithTimer(timer TaskTimer) {
 	for _, t := range tm.tasks {
 		if t.timer == timer {
-			task := t
-			fmt.Println(task.name)
-			tm.sc.Go(func(routine Routine) error {
-				return task.execF(tm, task)
-			}, task.name+("exec"))
+			func(t *Task) {
+				tm.sc.Go(func(routine Routine) error {
+					return t.execF(tm, t)
+				}, t.name+("(exec)"))
+			}(t)
 		}
 	}
 }
@@ -190,9 +193,18 @@ func (tm *TaskManager) NewTask(name, displayName string, f TaskInitFunc, timer T
 	}
 
 	if t.startupF != nil {
-		err := t.startupF(tm, t)
+		err := PanicToErr(func() error {
+			return t.startupF(tm, t)
+		})
 		if err != nil {
-			return fmt.Errorf("taskManager: failed initializing task %s: %w", name, err)
+			if panicErr := errors.Unwrap(err); panicErr == nil {
+				return fmt.Errorf("taskManager: failed initializing task %s: %w", name, err)
+			} else {
+				tm.router.Logger.Log(
+					LogLevelFatal, panicErr.Error(),
+					strings.TrimLeft(err.Error(), panicErr.Error()+"\n"))
+				return fmt.Errorf("taskManager: failed initializing task %s: %w", name, panicErr)
+			}
 		}
 	}
 
@@ -230,8 +242,12 @@ func (tm *TaskManager) RemoveTask(name string) error {
 		return err
 	}
 
-	err = t.cleanupF(tm, t)
+	if t.cleanupF != nil {
+		err = t.cleanupF(tm, t)
+	}
+
 	delete(tm.tasks, name)
+
 	return err
 }
 
