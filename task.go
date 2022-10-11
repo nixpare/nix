@@ -36,7 +36,7 @@ func (r *Router) newTaskManager() {
 	r.TaskMgr = &TaskManager{
 		r, make(chan struct{}), NewScheduler(r.Logger, "Task Manager"), false,
 		make(map[string]*program), make(map[string]*Task),
-		time.NewTicker(time.Minute), time.NewTicker(time.Minute * 10),
+		time.NewTicker(time.Second * 5), time.NewTicker(time.Minute * 10),
 		time.NewTicker(time.Minute * 30), time.NewTicker(time.Hour),
 	}
 }
@@ -58,21 +58,30 @@ func (tm *TaskManager) start() {
 				tm.runTasksWithTimer(TaskTimer1Hour)
 			}
 		}
-
-		tm.sc.Wait()
 	}()
 
 	for range tm.exitC {
 	}
+
 	tm.running = false
+
+	tm.ticker1m.Stop()
+	tm.ticker10m.Stop()
+	tm.ticker30m.Stop()
+	tm.ticker1h.Stop()
+
+	tm.sc.Wait()
 }
 
 func (tm *TaskManager) stop() {
-	for name := range tm.tasks {
+	for n := range tm.tasks {
+		name := n
 		tm.sc.Go(func(routine Routine) error {
 			return tm.RemoveTask(name)
 		}, name+"(cleanup)")
 	}
+
+	tm.sc.Wait()
 	close(tm.exitC)
 }
 
@@ -84,9 +93,11 @@ func (tm *TaskManager) wait() {
 func (tm *TaskManager) runTasksWithTimer(timer TaskTimer) {
 	for _, t := range tm.tasks {
 		if t.timer == timer {
+			task := t
+			fmt.Println(task.name)
 			tm.sc.Go(func(routine Routine) error {
-				return t.execF(tm, t)
-			}, t.name+("exec"))
+				return task.execF(tm, task)
+			}, task.name+("exec"))
 		}
 	}
 }
@@ -99,19 +110,14 @@ func (tm *TaskManager) checkProgramName(name string) bool {
 	return !exists
 }
 
-// Checks if a new task can be created with the giver name. If there is an
-// already registered task with the same name, it returns false, otherwise
-// it returns true
-func (tm *TaskManager) checkTaskName(name string) bool {
+// Checks if there is a task registered with the given name
+func (tm *TaskManager) taskNameExists(name string) bool {
 	_, exists := tm.tasks[name]
-	return !exists
+	return exists
 }
 
-// Checks if a new task can be created with the giver name. If there is an
-// already registered task with the same name, it returns false, otherwise
-// it returns true
 func (tm *TaskManager) getTask(name string) (*Task, error) {
-	if !tm.checkTaskName(name) {
+	if !tm.taskNameExists(name) {
 		return nil, fmt.Errorf("taskManager: task %s not found", name)
 	}
 
@@ -131,7 +137,6 @@ type Task struct {
 	execF       TaskFunc
 	cleanupF    TaskFunc
 	timer       TaskTimer
-	forceQuit   bool
 }
 
 func (t Task) Name() string {
@@ -172,8 +177,8 @@ type TaskInitFunc func() (startupF, execF, cleanupF TaskFunc)
 // function (f TaskInitFunc) and execution timer, the TaskManager initialize it calling the
 // startupF function provided by f (if any). If it returns an error the Task will not be
 // registered in the TaskManager.
-func (tm *TaskManager) NewTask(name, displayName string, f TaskInitFunc, timer TaskTimer, forceQuit bool) error {
-	if !tm.checkTaskName(name) {
+func (tm *TaskManager) NewTask(name, displayName string, f TaskInitFunc, timer TaskTimer) error {
+	if tm.taskNameExists(name) {
 		return fmt.Errorf("taskManager: create: task %s already registered", name)
 	}
 	startupF, execF, cleanupF := f()
@@ -181,7 +186,7 @@ func (tm *TaskManager) NewTask(name, displayName string, f TaskInitFunc, timer T
 	t := &Task{
 		name, displayName,
 		startupF, execF, cleanupF,
-		timer, forceQuit,
+		timer,
 	}
 
 	if t.startupF != nil {
@@ -191,6 +196,7 @@ func (tm *TaskManager) NewTask(name, displayName string, f TaskInitFunc, timer T
 		}
 	}
 
+	tm.tasks[name] = t
 	return nil
 }
 
