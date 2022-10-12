@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -74,13 +74,15 @@ func (l Log) String() string {
 	)
 }
 
-// Logger is used by the Router and can be used by the user to
+// logger is used by the Router and can be used by the user to
 // create logs that are both written to the chosen io.Writer (if any)
 // and saved locally in memory, so that they can be retreived
 // programmatically and used (for example to make a view in a website)
 type logger struct {
-	out  io.Writer
-	logs []Log
+	main      io.Writer
+	secondary io.Writer
+	logs      []Log
+	m         *sync.Mutex
 }
 
 // Logger is used by the Router and can be used by the user to
@@ -93,17 +95,19 @@ type Logger interface {
 	JSON() []byte
 }
 
-// NewLogger creates a new Logger with the given io.Writer out. If out
-// is nil the Logger will use os.Stdout, so if you do not want to write
-// any file or buffer you should open a file with os.DevNull
-func NewLogger(out io.Writer) Logger {
-	l := &logger{}
-	l.logs = make([]Log, 0)
+// NewLogger creates a new Logger with the given io.Writer out. The
+// secondary argument is optional and tells the Logger where to write ONLY
+// the logs with an extra field set. If more elements are passed to the
+// secondary argument only the first one will be used
+func NewLogger(main io.Writer, secondary ...io.Writer) Logger {
+	l := &logger{
+		main: main,
+		logs: make([]Log, 0),
+		m:    new(sync.Mutex),
+	}
 
-	if out == nil {
-		l.out = os.Stdout
-	} else {
-		l.out = out
+	if len(secondary) > 0 {
+		l.secondary = secondary[0]
 	}
 
 	return l
@@ -112,13 +116,27 @@ func NewLogger(out io.Writer) Logger {
 // log first creates a new Log, appends it to the list of Logs and then prints it
 // to out
 func (l logger) log(level LogLevel, message string, extra ...string) {
+	l.m.Lock()
+	defer l.m.Unlock()
+
 	log := Log{
 		level, time.Now(),
 		message, strings.Join(extra, ""),
 	}
-
 	l.logs = append(l.logs, log)
-	fmt.Fprintln(l.out, log)
+
+	if l.main != nil {
+		if l.main == l.secondary {
+			fmt.Fprintf(l.secondary, "%v\n%s\n", log, log.Extra)
+			return
+		}
+
+		fmt.Fprintln(l.main, log)
+	}
+
+	if log.Extra != "" && l.secondary != nil {
+		fmt.Fprintf(l.secondary, "%v\n%s\n", log, log.Extra)
+	}
 }
 
 // Log creates a new Log with the given arguments as a user-generated log, adds it to

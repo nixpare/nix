@@ -210,6 +210,7 @@ type Routine interface {
 	Go(RoutineFunc, ...string)
 	GoNB(RoutineFunc, ...string)
 	Wait()
+	Logger() Logger
 }
 
 // Name returns the routine identifier, that can be one of theese combinations:
@@ -227,6 +228,10 @@ func (sc *Scheduler) Name() string {
 
 func (sc *Scheduler) String() string {
 	return sc.Name()
+}
+
+func (sc *Scheduler) Logger() Logger {
+	return sc.logger
 }
 
 func (sc *Scheduler) recoverAndDefer() {
@@ -286,6 +291,7 @@ func (sc *Scheduler) newChild(name string) *Scheduler {
 		exitC:     make(chan struct{}),
 		panicChan: sc.panicChan,
 		errChan:   sc.errChan,
+		logger:    sc.logger,
 	}
 }
 
