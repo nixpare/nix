@@ -176,6 +176,29 @@ type TaskFunc func(tm *TaskManager, t *Task) error
 }*/
 type TaskInitFunc func() (startupF, execF, cleanupF TaskFunc)
 
+func (tm *TaskManager) runTaskFunc(t *Task, f TaskFunc) error {
+	if f == nil {
+		return nil
+	}
+
+	err := PanicToErr(func() error {
+		return f(tm, t)
+	})
+	if err != nil {
+		if panicErr := errors.Unwrap(err); panicErr == nil {
+			tm.router.Logger.Log(LogLevelError, err.Error())
+			err = fmt.Errorf("taskManager: failed task %s execution: %w", t.name, err)
+		} else {
+			tm.router.Logger.Log(
+				LogLevelFatal, panicErr.Error(),
+				strings.TrimLeft(err.Error(), panicErr.Error()+"\n"))
+			err = fmt.Errorf("taskManager: failed initializing task %s: %w", t.name, panicErr)
+		}
+	}
+
+	return err
+}
+
 // NewTask creates and registers a new Task with the given name, displayName, initialization
 // function (f TaskInitFunc) and execution timer, the TaskManager initialize it calling the
 // startupF function provided by f (if any). If it returns an error the Task will not be
@@ -192,24 +215,10 @@ func (tm *TaskManager) NewTask(name, displayName string, f TaskInitFunc, timer T
 		timer,
 	}
 
-	if t.startupF != nil {
-		err := PanicToErr(func() error {
-			return t.startupF(tm, t)
-		})
-		if err != nil {
-			if panicErr := errors.Unwrap(err); panicErr == nil {
-				return fmt.Errorf("taskManager: failed initializing task %s: %w", name, err)
-			} else {
-				tm.router.Logger.Log(
-					LogLevelFatal, panicErr.Error(),
-					strings.TrimLeft(err.Error(), panicErr.Error()+"\n"))
-				return fmt.Errorf("taskManager: failed initializing task %s: %w", name, panicErr)
-			}
-		}
-	}
+	err := tm.runTaskFunc(t, t.startupF)
 
 	tm.tasks[name] = t
-	return nil
+	return err
 }
 
 // ChangeTaskTimer changes the Task timer to the given one
@@ -224,14 +233,13 @@ func (tm *TaskManager) ChangeTaskTimer(name string, timer TaskTimer) error {
 }
 
 // ExecuteTask runs the Task immediatly
-func (tm *TaskManager) ExecuteTask(name string, timer TaskTimer) error {
+func (tm *TaskManager) ExecuteTask(name string) error {
 	t, err := tm.getTask(name)
 	if err != nil {
 		return err
 	}
 
-	t.timer = timer
-	return nil
+	return tm.runTaskFunc(t, t.execF)
 }
 
 // RemoveTask runs the cleanup function provided and removes the Task from
@@ -242,12 +250,9 @@ func (tm *TaskManager) RemoveTask(name string) error {
 		return err
 	}
 
-	if t.cleanupF != nil {
-		err = t.cleanupF(tm, t)
-	}
+	err = tm.runTaskFunc(t, t.cleanupF)
 
 	delete(tm.tasks, name)
-
 	return err
 }
 
