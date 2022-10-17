@@ -5,20 +5,23 @@ import (
 )
 
 type Router struct {
-	servers   map[int]*Server
-	cleanupF  func() error
-	startTime time.Time
-	Logger    Logger
-	TaskMgr   *TaskManager
-	exitC     chan struct{}
+	servers        map[int]*Server
+	cleanupF       func() error
+	startTime      time.Time
+	Logger         Logger
+	TaskMgr        *TaskManager
+	exitC          chan struct{}
+	offlineClients map[string]offlineClient
+	isInternalConn func(remoteAddress string) bool
 }
 
 func NewRouter(logger Logger) *Router {
 	r := &Router{
-		servers:   make(map[int]*Server),
-		startTime: time.Now(),
-		Logger:    logger,
-		exitC:     make(chan struct{}),
+		servers:        make(map[int]*Server),
+		startTime:      time.Now(),
+		Logger:         logger,
+		exitC:          make(chan struct{}),
+		offlineClients: make(map[string]offlineClient),
 	}
 
 	r.newTaskManager()
@@ -27,6 +30,8 @@ func NewRouter(logger Logger) *Router {
 }
 
 func (r *Router) Start() {
+	r.startTime = time.Now()
+
 	go r.TaskMgr.start()
 
 	r.TaskMgr.wait()

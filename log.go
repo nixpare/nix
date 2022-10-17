@@ -17,6 +17,8 @@ const (
 	LogLevelFatal
 )
 
+const timeFormat = "2006-01-02 15:04:05.00"
+
 // LogLevel defines the severity of a Log. See the constants
 type LogLevel int
 
@@ -69,7 +71,7 @@ func (l Log) JSON() []byte {
 func (l Log) String() string {
 	return fmt.Sprintf(
 		"[%v] - %v: %s",
-		l.Date.Format("2006-01-02 15:04:05.000"),
+		l.Date.Format(timeFormat),
 		l.Level, l.Message,
 	)
 }
@@ -93,6 +95,7 @@ type Logger interface {
 	Log(level LogLevel, message string, extra ...string)
 	Logs() []Log
 	JSON() []byte
+	out() io.Writer
 }
 
 // NewLogger creates a new Logger with the given io.Writer out. The
@@ -166,4 +169,20 @@ func (l logger) JSON() []byte {
 
 	res = append(res, []byte("}")...)
 	return res
+}
+
+func (l logger) out() io.Writer {
+	return l.main
+}
+
+func WriteLogStart(t time.Time) string {
+	return "\n     /\\ /\\ /\\                                            /\\ /\\ /\\" +
+		"\n     <> <> <> - [" + t.Format(timeFormat) + "] - SERVER ONLINE - <> <> <>" +
+		"\n     \\/ \\/ \\/                                            \\/ \\/ \\/\n\n"
+}
+
+func WriteLogClosure(t time.Time) string {
+	return "\n     /\\ /\\ /\\                                             /\\ /\\ /\\" +
+		"\n     <> <> <> - [" + t.Format(timeFormat) + "] - SERVER OFFLINE - <> <> <>" +
+		"\n     \\/ \\/ \\/                                             \\/ \\/ \\/\n\n"
 }
