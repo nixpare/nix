@@ -38,9 +38,11 @@ type Context struct {
 
 	connTime time.Time
 
-	disableLogging bool
+	enableLogging bool
 
-	disableErrorCapture bool
+	enableErrorCapture bool
+
+	enableRecovery bool
 
 	caputedError CapturedError
 
@@ -62,7 +64,7 @@ func (ctx *Context) Write(data []byte) (int, error) {
 		ctx.WriteHeader(http.StatusOK)
 	}
 
-	if ctx.code >= 400 && !ctx.disableErrorCapture {
+	if ctx.code >= 400 && ctx.enableErrorCapture {
 		ctx.caputedError.Data = append(ctx.caputedError.Data, data...)
 		return len(data), nil
 	}
@@ -82,11 +84,19 @@ func (ctx *Context) WriteHeader(statusCode int) {
 	}
 
 	ctx.code = statusCode
-	if statusCode < 400 || ctx.disableErrorCapture {
+	if statusCode < 400 || !ctx.enableErrorCapture {
 		ctx.w.WriteHeader(statusCode)
 	} else {
 		ctx.caputedError.Code = statusCode
 	}
+}
+
+func (ctx *Context) Main() *Context {
+	if ctx.main != nil {
+		return ctx.main
+	}
+
+	return GetMain(ctx.r)
 }
 
 func (ctx *Context) W() http.ResponseWriter {
@@ -97,55 +107,53 @@ func (ctx *Context) R() *http.Request {
 	return ctx.r
 }
 
-func serveContext(ctx *Context, handler func(*Context)) {
-	panicErr := logger.CapturePanic(func() error {
-		handler(ctx)
-		return nil
-	})
-
-	if panicErr != nil {
-		if ctx.code == 0 {
-			ctx.Error(http.StatusInternalServerError, "Internal server error", panicErr)
-			if ctx.written == 0 {
-				ctx.serveError()
-			}
-		} else {
-			if ctx.written == 0 {
-				ctx.serveError()
-			}
-
-			if ctx.caputedError.Internal == "" {
-				ctx.caputedError.Internal = fmt.Sprintf("panic after response: %v", panicErr)
+func serveContext(ctx *Context, handlerFunc func(*Context)) {
+	if ctx.enableRecovery {
+		panicErr := logger.CapturePanic(func() error {
+			handlerFunc(ctx)
+			return nil
+		})
+	
+		if panicErr != nil {
+			if ctx.code == 0 {
+				ctx.Error(http.StatusInternalServerError, "Internal server error", panicErr)
+				if ctx.written == 0 {
+					ctx.serveError()
+				}
 			} else {
-				ctx.caputedError.Internal = fmt.Sprintf(
-					"panic after response: %v -> response error: %s\n%s",
-					panicErr.Unwrap(),
-					ctx.caputedError.Internal,
-					panicErr.Stack(),
-				)
+				if ctx.written == 0 {
+					ctx.serveError()
+				}
+	
+				if len(ctx.caputedError.internal) == 0 {
+					ctx.caputedError.internal = []string{fmt.Sprintf("panic after response: %v", panicErr)}
+				} else {
+					ctx.caputedError.internal = []string{fmt.Sprintf(
+						"panic after response: %v -> response error: %s\n%s",
+						panicErr.Unwrap(),
+						ctx.caputedError.Internal(),
+						panicErr.Stack(),
+					)}
+				}
 			}
+	
+			ctx.logHTTPPanic(ctx.getMetrics())
+			return
 		}
-
-		ctx.logHTTPPanic(ctx.getMetrics())
-		return
+	} else {
+		handlerFunc(ctx)
 	}
 
 	if ctx.code == 0 {
-		ctx.code = 200
+		ctx.WriteHeader(http.StatusOK)
 	}
 
-	if ctx.code >= 400 && !ctx.disableErrorCapture {
-		if ctx.main != ctx {
-			ctx.main.disableErrorCapture = true
-		}
+	if ctx.code >= 400 && ctx.enableErrorCapture {
 		ctx.serveError()
 	}
 
-	if ctx.disableLogging {
+	if !ctx.enableLogging {
 		return
-	}
-	if ctx.main != ctx {
-		ctx.main.disableLogging = true
 	}
 
 	metrics := ctx.getMetrics()

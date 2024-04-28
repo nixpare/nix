@@ -2,6 +2,7 @@ package nix
 
 import (
 	"fmt"
+	"html/template"
 	"strings"
 	"time"
 
@@ -12,22 +13,43 @@ func (ctx *Context) Logger() logger.Logger {
 	return ctx.l
 }
 
-func (ctx *Context) IsSecure() bool {
-	return ctx.r.TLS != nil
+func (ctx *Context) SetLogger(l logger.Logger) {
+	ctx.l = l
+	if ctx.main != nil {
+		ctx.main.l = l
+	}
+}
+
+func (ctx *Context) SetErrorTemplate(t *template.Template) {
+	ctx.errTemplate = t
+	if ctx.main != nil {
+		ctx.main.errTemplate = t
+	}
 }
 
 func (ctx *Context) SetCustomHostLog(host string) {
-	ctx.main.customHostLog = host
+	ctx.customHostLog = host
+	if ctx.main != nil {
+		ctx.main.customHostLog = host
+	}
 }
 
 func (ctx *Context) DisableLogging() {
-	ctx.disableLogging = true
-	ctx.main.disableLogging = true
+	ctx.enableLogging = false
+	if ctx.main != nil {
+		ctx.main.enableLogging = false
+	}
 }
 
 func (ctx *Context) DisableErrorCapture() {
-	ctx.disableErrorCapture = true
-	ctx.main.disableErrorCapture = true
+	ctx.enableErrorCapture = false
+	if ctx.main != nil {
+		ctx.main.enableErrorCapture = false
+	}
+}
+
+func (ctx *Context) IsSecure() bool {
+	return ctx.r.TLS != nil
 }
 
 // metrics is a collection of parameters to log taken from an HTTP
@@ -69,22 +91,39 @@ func getProto(ctx *Context) string {
 
 // logHTTPInfo logs http request with an exit code < 400
 func (ctx *Context) logHTTPInfo(m metrics) {
-	ctx.l.Printf(logger.LOG_LEVEL_INFO, http_info_format,
-		logger.BRIGHT_BLUE_COLOR, m.RemoteAddr, logger.DEFAULT_COLOR,
-		logger.BRIGHT_GREEN_COLOR, m.Code,
-		ctx.r.Method, logger.DARK_GREEN_COLOR,
-		ctx.r.RequestURI, logger.DEFAULT_COLOR,
-		logger.BRIGHT_BLACK_COLOR, float64(m.Written)/1000000.,
-		m.Duration.Milliseconds(), logger.DEFAULT_COLOR,
-		logger.DARK_CYAN_COLOR, ctx.logHost(),
-		logger.BRIGHT_BLACK_COLOR, getProto(ctx), logger.DEFAULT_COLOR,
-	)
+	if len(ctx.caputedError.internal) == 0 {
+		ctx.l.Printf(logger.LOG_LEVEL_INFO, http_info_format,
+			logger.BRIGHT_BLUE_COLOR, m.RemoteAddr, logger.DEFAULT_COLOR,
+			logger.BRIGHT_GREEN_COLOR, m.Code,
+			ctx.r.Method, logger.DARK_GREEN_COLOR,
+			ctx.r.RequestURI, logger.DEFAULT_COLOR,
+			logger.BRIGHT_BLACK_COLOR, float64(m.Written)/1000000.,
+			m.Duration.Milliseconds(), logger.DEFAULT_COLOR,
+			logger.DARK_CYAN_COLOR, ctx.logHost(),
+			logger.BRIGHT_BLACK_COLOR, getProto(ctx), logger.DEFAULT_COLOR,
+		)
+	} else {
+		internal := ctx.caputedError.Internal()
+
+		ctx.l.Printf(logger.LOG_LEVEL_INFO, http_warning_format,
+			logger.BRIGHT_BLUE_COLOR, m.RemoteAddr, logger.DEFAULT_COLOR,
+			logger.BRIGHT_GREEN_COLOR, m.Code,
+			ctx.r.Method, logger.DARK_GREEN_COLOR,
+			ctx.r.RequestURI, logger.DEFAULT_COLOR,
+			logger.BRIGHT_BLACK_COLOR, float64(m.Written)/1000000.,
+			m.Duration.Milliseconds(), logger.DEFAULT_COLOR,
+			logger.DARK_CYAN_COLOR, ctx.logHost(),
+			logger.BRIGHT_BLACK_COLOR, getProto(ctx), logger.DEFAULT_COLOR,
+			logger.BRIGHT_GREEN_COLOR, internal, logger.DEFAULT_COLOR,
+		)
+	}
 }
 
 // logHTTPWarning logs http request with an exit code >= 400 and < 500
 func (ctx *Context) logHTTPWarning(m metrics) {
-	if ctx.caputedError.Internal == "" {
-		ctx.caputedError.Internal = strings.TrimSpace(string(ctx.caputedError.Data))
+	internal := ctx.caputedError.Internal()
+	if internal == "" {
+		internal = strings.TrimSpace(string(ctx.caputedError.Data))
 	}
 
 	ctx.l.Printf(logger.LOG_LEVEL_WARNING, http_warning_format,
@@ -96,14 +135,15 @@ func (ctx *Context) logHTTPWarning(m metrics) {
 		m.Duration.Milliseconds(), logger.DEFAULT_COLOR,
 		logger.DARK_CYAN_COLOR, ctx.logHost(),
 		logger.BRIGHT_BLACK_COLOR, getProto(ctx), logger.DEFAULT_COLOR,
-		logger.DARK_YELLOW_COLOR, ctx.caputedError.Internal, logger.DEFAULT_COLOR,
+		logger.DARK_YELLOW_COLOR, internal, logger.DEFAULT_COLOR,
 	)
 }
 
 // logHTTPError logs http request with an exit code >= 500
 func (ctx *Context) logHTTPError(m metrics) {
-	if ctx.caputedError.Internal == "" {
-		ctx.caputedError.Internal = strings.TrimSpace(string(ctx.caputedError.Data))
+	internal := ctx.caputedError.Internal()
+	if internal == "" {
+		internal = strings.TrimSpace(string(ctx.caputedError.Data))
 	}
 
 	ctx.l.Printf(logger.LOG_LEVEL_ERROR, http_error_format,
@@ -115,13 +155,14 @@ func (ctx *Context) logHTTPError(m metrics) {
 		m.Duration.Milliseconds(), logger.DEFAULT_COLOR,
 		logger.DARK_CYAN_COLOR, ctx.logHost(),
 		logger.BRIGHT_BLACK_COLOR, getProto(ctx), logger.DEFAULT_COLOR,
-		logger.DARK_RED_COLOR, ctx.caputedError.Internal, logger.DEFAULT_COLOR,
+		logger.DARK_RED_COLOR, internal, logger.DEFAULT_COLOR,
 	)
 }
 
 func (ctx *Context) logHTTPPanic(m metrics) {
-	if ctx.caputedError.Internal == "" {
-		ctx.caputedError.Internal = strings.TrimSpace(string(ctx.caputedError.Data))
+	internal := ctx.caputedError.Internal()
+	if internal == "" {
+		internal = strings.TrimSpace(string(ctx.caputedError.Data))
 	}
 
 	ctx.l.Printf(logger.LOG_LEVEL_FATAL, http_panic_format,
@@ -133,7 +174,7 @@ func (ctx *Context) logHTTPPanic(m metrics) {
 		m.Duration.Milliseconds(), logger.DEFAULT_COLOR,
 		logger.DARK_CYAN_COLOR, ctx.logHost(),
 		logger.BRIGHT_BLACK_COLOR, getProto(ctx), logger.DEFAULT_COLOR,
-		logger.DARK_RED_COLOR, ctx.caputedError.Internal, logger.DEFAULT_COLOR,
+		logger.DARK_RED_COLOR, internal, logger.DEFAULT_COLOR,
 	)
 }
 

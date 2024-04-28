@@ -7,8 +7,6 @@ import (
 	"html/template"
 	"net/http"
 	"strings"
-
-	"github.com/nixpare/logger/v2"
 )
 
 //go:embed static
@@ -31,15 +29,26 @@ func DefaultErrTemplate() *template.Template {
 type CapturedError struct {
 	Code     int
 	Data     []byte
-	Internal string
+	internal []string
 }
 
 func (err CapturedError) Message() string {
 	return string(err.Data)
 }
 
+func (err CapturedError) Internal() string {
+	switch len(err.internal) {
+	case 0:
+		return ""
+	case 1:
+		return err.internal[0]
+	default:
+		return fmt.Sprintf("%d messages:\n- %s", len(err.internal), strings.Join(err.internal, "\n- "))
+	}
+}
+
 func (err CapturedError) Error() string {
-	return fmt.Sprintf(`{"code": %d, "message": "%s", "internal": "%s"}`, err.Code, err.Data, err.Internal)
+	return fmt.Sprintf(`{"code": %d, "message": "%s", "internal": "%s"}`, err.Code, err.Data, err.Internal())
 }
 
 func (ctx *Context) writeError(data []byte, ctype string) {
@@ -78,7 +87,7 @@ func (ctx *Context) serveError() {
 
 	b := bytes.NewBuffer(nil)
 	if err := ctx.errTemplate.Execute(b, ctx.caputedError); err != nil {
-		ctx.l.Printf(logger.LOG_LEVEL_ERROR, "Error serving template file: %v", err)
+		ctx.AddInteralMessage("Error serving template file:", err)
 		ctx.writeError(ctx.caputedError.Data, ctype)
 		return
 	}
@@ -106,16 +115,25 @@ func (ctx *Context) Error(statusCode int, message string, a ...any) {
 		message = "Unknown error"
 	}
 
-	ctx.Write([]byte(message))
+	ctx.String(message)
+	ctx.AddInteralMessage(a...)
+}
 
+func (ctx *Context) AddInteralMessage(a ...any) {
+	var internal string
 	first := true
 	for _, x := range a {
 		if first {
 			first = false
 		} else {
-			ctx.caputedError.Internal += " "
+			internal += " "
 		}
 
-		ctx.caputedError.Internal += fmt.Sprint(x)
+		internal += fmt.Sprint(x)
+	}
+
+	ctx.caputedError.internal = append(ctx.caputedError.internal, internal)
+	if ctx.main != nil {
+		ctx.main.caputedError.internal = append(ctx.main.caputedError.internal, internal)
 	}
 }

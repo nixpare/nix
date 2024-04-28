@@ -21,20 +21,9 @@ func (n *Nix) Handle(handler func(ctx *Context)) http.HandlerFunc {
 		ctx := &Context{
 			w:   w,
 			r:   r,
+			l:   logger.DefaultLogger,
 			connTime:            time.Now(),
 		}
-
-		main := GetMain(r)
-		if main == nil {
-			main = ctx
-			setMain(r, ctx)
-		} else {
-			ctx.customHostLog = main.customHostLog
-			ctx.disableLogging = main.disableLogging
-			ctx.disableErrorCapture = main.disableErrorCapture
-			ctx.errTemplate = main.errTemplate
-		}
-		ctx.main = main
 
 		for _, opt := range n.opts {
 			opt(ctx)
@@ -56,17 +45,6 @@ func (n *Nix) WrapFunc(handler http.HandlerFunc) http.HandlerFunc {
 	})
 }
 
-func ConnectMain(handler func(ctx *Context)) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		main := GetMain(r)
-		if main == nil {
-			return
-		}
-
-		handler(main)
-	}
-}
-
 func NewHandler(handler func(ctx *Context), opts ...Option) http.HandlerFunc {
 	return New(opts...).Handle(handler)
 }
@@ -83,30 +61,48 @@ type Option func(ctx *Context)
 
 func LoggerOption(l logger.Logger) Option {
 	return func(ctx *Context) {
-		ctx.l = l
+		ctx.SetLogger(l)
 	}
 }
 
-func ErrTemplateOption(templ *template.Template) Option {
+func ErrorTemplateOption(t *template.Template) Option {
 	return func(ctx *Context) {
-		ctx.errTemplate = templ
+		ctx.SetErrorTemplate(t)
 	}
 }
 
-func DisableLoggingOption() Option {
+func EnableLoggingOption() Option {
 	return func(ctx *Context) {
-		ctx.disableLogging = true
+		ctx.enableLogging = true
 	}
 }
 
 func CustomHostLogOption(host string) Option {
 	return func(ctx *Context) {
-		ctx.customHostLog = host
+		ctx.SetCustomHostLog(host)
 	}
 }
 
-func DisableErrorCaptureOption() Option {
+func EnableErrorCaptureOption() Option {
 	return func(ctx *Context) {
-		ctx.disableErrorCapture = true
+		ctx.enableErrorCapture = true
+	}
+}
+
+func EnableRecoveryOption() Option {
+	return func(ctx *Context) {
+		ctx.enableRecovery = true
+	}
+}
+
+func MainOption() Option {
+	return func(ctx *Context) {
+		setMain(ctx.r, ctx)
+	}
+}
+
+func ConnectToMainOption() Option {
+	return func(ctx *Context) {
+		ctx.main = GetMain(ctx.r)
 	}
 }
