@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nixpare/logger/v2"
+	"github.com/nixpare/nix/middleware"
 )
 
 type mainNixContextKey string
@@ -51,6 +52,10 @@ type Context struct {
 	code int
 
 	written int64
+
+	cookieManager *middleware.CookieManager
+
+	cache *middleware.Cache
 }
 
 // Header is the equivalent of the http.ResponseWriter method

@@ -10,23 +10,18 @@ import (
 	"net/url"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/nixpare/logger/v2"
 )
-
-func (ctx *Context) JSON(data []byte) {
-	ctx.Header().Set("Content-Type", "application/json")
-	ctx.Write(data)
-}
 
 // ServeText serves a string (as raw bytes) to the client
 func (ctx *Context) String(s string) {
 	ctx.Write([]byte(s))
 }
 
-func (ctx *Context) ServeContent(name string, modtime time.Time, content io.ReadSeeker) {
-	http.ServeContent(ctx, ctx.r, name, modtime, content)
+func (ctx *Context) JSON(data []byte) {
+	ctx.Header().Set("Content-Type", "application/json")
+	ctx.Write(data)
 }
 
 func (ctx *Context) NewReverseProxy(dest string) (*httputil.ReverseProxy, error) {

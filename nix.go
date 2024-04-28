@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/nixpare/logger/v2"
+	"github.com/nixpare/nix/middleware"
 )
 
 type Nix struct {
@@ -104,5 +105,17 @@ func MainOption() Option {
 func ConnectToMainOption() Option {
 	return func(ctx *Context) {
 		ctx.main = GetMain(ctx.r)
+	}
+}
+
+func CookieManagerOption(cm *middleware.CookieManager) Option {
+	return func(ctx *Context) {
+		ctx.cookieManager = cm
+	}
+}
+
+func CacheOption(cache *middleware.Cache) Option {
+	return func(ctx *Context) {
+		ctx.cache = cache
 	}
 }
