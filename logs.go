@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/nixpare/logger/v2"
+	"github.com/nixpare/nix/utility"
 )
 
 func (ctx *Context) Logger() logger.Logger {
@@ -72,10 +73,10 @@ func (ctx *Context) getMetrics() metrics {
 }
 
 const (
-	http_info_format    = "%s%-15s%s - %s%d %-4s%s %-50s%s - %s%10.3f MB (%6d ms)%s \u279C %s%s %s(%s)%s"
-	http_warning_format = "%s%-15s%s - %s%d %-4s%s %-50s%s - %s%10.3f MB (%6d ms)%s \u279C %s%s %s(%s)%s \u279C %s%s%s"
-	http_error_format   = "%s%-15s%s - %s%d %-4s%s %-50s%s - %s%10.3f MB (%6d ms)%s \u279C %s%s %s(%s)%s \u279C %s%s%s"
-	http_panic_format   = "%s%-15s%s - %s%d %-4s%s %-50s%s - %s%10.3f MB (%6d ms)%s \u279C %s%s %s(%s)%s \u279C %spanic: %s%s"
+	http_info_format    = "%s%-21s%s - %s%d %-4s%s %-50s%s - %s%s (%6d ms)%s \u279C %s%s %s(%s)%s"
+	http_warning_format = "%s%-21s%s - %s%d %-4s%s %-50s%s - %s%s (%6d ms)%s \u279C %s%s %s(%s)%s \u279C %s%s%s"
+	http_error_format   = "%s%-21s%s - %s%d %-4s%s %-50s%s - %s%s (%6d ms)%s \u279C %s%s %s(%s)%s \u279C %s%s%s"
+	http_panic_format   = "%s%-21s%s - %s%d %-4s%s %-50s%s - %s%s (%6d ms)%s \u279C %s%s %s(%s)%s \u279C %spanic: %s%s"
 )
 
 func getProto(ctx *Context) string {
@@ -97,7 +98,7 @@ func (ctx *Context) logHTTPInfo(m metrics) {
 			logger.BRIGHT_GREEN_COLOR, m.Code,
 			ctx.r.Method, logger.DARK_GREEN_COLOR,
 			ctx.r.RequestURI, logger.DEFAULT_COLOR,
-			logger.BRIGHT_BLACK_COLOR, float64(m.Written)/1000000.,
+			logger.BRIGHT_BLACK_COLOR, utility.PrintBytes(int(m.Written)),
 			m.Duration.Milliseconds(), logger.DEFAULT_COLOR,
 			logger.DARK_CYAN_COLOR, ctx.logHost(),
 			logger.BRIGHT_BLACK_COLOR, getProto(ctx), logger.DEFAULT_COLOR,
@@ -110,7 +111,7 @@ func (ctx *Context) logHTTPInfo(m metrics) {
 			logger.BRIGHT_GREEN_COLOR, m.Code,
 			ctx.r.Method, logger.DARK_GREEN_COLOR,
 			ctx.r.RequestURI, logger.DEFAULT_COLOR,
-			logger.BRIGHT_BLACK_COLOR, float64(m.Written)/1000000.,
+			logger.BRIGHT_BLACK_COLOR, utility.PrintBytes(int(m.Written)),
 			m.Duration.Milliseconds(), logger.DEFAULT_COLOR,
 			logger.DARK_CYAN_COLOR, ctx.logHost(),
 			logger.BRIGHT_BLACK_COLOR, getProto(ctx), logger.DEFAULT_COLOR,
@@ -131,7 +132,7 @@ func (ctx *Context) logHTTPWarning(m metrics) {
 		logger.DARK_YELLOW_COLOR, m.Code,
 		ctx.r.Method, logger.DARK_GREEN_COLOR,
 		ctx.r.RequestURI, logger.DEFAULT_COLOR,
-		logger.BRIGHT_BLACK_COLOR, float64(m.Written)/1000000.,
+		logger.BRIGHT_BLACK_COLOR, utility.PrintBytes(int(m.Written)),
 		m.Duration.Milliseconds(), logger.DEFAULT_COLOR,
 		logger.DARK_CYAN_COLOR, ctx.logHost(),
 		logger.BRIGHT_BLACK_COLOR, getProto(ctx), logger.DEFAULT_COLOR,
@@ -151,7 +152,7 @@ func (ctx *Context) logHTTPError(m metrics) {
 		logger.DARK_RED_COLOR, m.Code,
 		ctx.r.Method, logger.DARK_GREEN_COLOR,
 		ctx.r.RequestURI, logger.DEFAULT_COLOR,
-		logger.BRIGHT_BLACK_COLOR, float64(m.Written)/1000000.,
+		logger.BRIGHT_BLACK_COLOR, utility.PrintBytes(int(m.Written)),
 		m.Duration.Milliseconds(), logger.DEFAULT_COLOR,
 		logger.DARK_CYAN_COLOR, ctx.logHost(),
 		logger.BRIGHT_BLACK_COLOR, getProto(ctx), logger.DEFAULT_COLOR,
@@ -170,7 +171,7 @@ func (ctx *Context) logHTTPPanic(m metrics) {
 		logger.DARK_RED_COLOR, m.Code,
 		ctx.r.Method, logger.DARK_GREEN_COLOR,
 		ctx.r.RequestURI, logger.DEFAULT_COLOR,
-		logger.BRIGHT_BLACK_COLOR, float64(m.Written)/1000000.,
+		logger.BRIGHT_BLACK_COLOR, utility.PrintBytes(int(m.Written)),
 		m.Duration.Milliseconds(), logger.DEFAULT_COLOR,
 		logger.DARK_CYAN_COLOR, ctx.logHost(),
 		logger.BRIGHT_BLACK_COLOR, getProto(ctx), logger.DEFAULT_COLOR,

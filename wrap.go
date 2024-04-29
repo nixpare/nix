@@ -21,6 +21,14 @@ func (ctx *Context) ServeFileFS(dir fs.FS, name string) {
 	http.ServeFileFS(ctx, ctx.r, dir, name)
 }
 
+func (ctx *Context) ServeCachedContent(uri string) {
+	ctx.cache.ServeStatic(ctx, ctx.r)
+}
+
+func (ctx *Context) ServeStatic() {
+	ctx.cache.ServeStatic(ctx, ctx.r)
+}
+
 func (ctx *Context) SetCookie(name string, value any, maxAge int, opts ...middleware.CookieOption) error {
 	return ctx.cookieManager.SetCookie(ctx, name, value, maxAge, opts...)
 }

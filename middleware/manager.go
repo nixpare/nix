@@ -13,7 +13,7 @@ type CookieManager struct {
 	secureCookiePerm *securecookie.SecureCookie
 }
 
-func NewCookieManager(hashKey []byte, blockKey []byte) (*CookieManager, error) {
+func NewCookieManager(hashKey []byte, blockKey []byte, sz securecookie.Serializer) (*CookieManager, error) {
 	cm := new(CookieManager)
 
 	hashKeyRand := securecookie.GenerateRandomKey(64)
@@ -35,6 +35,11 @@ func NewCookieManager(hashKey []byte, blockKey []byte) (*CookieManager, error) {
 		blockKeyPerm = append(blockKeyPerm, b)
 	}
 	cm.secureCookiePerm = securecookie.New(hashKeyPerm, blockKeyPerm).MaxAge(0)
+
+	if sz != nil {
+		cm.secureCookie.SetSerializer(sz)
+		cm.secureCookiePerm.SetSerializer(sz)
+	}
 
 	return cm, nil
 }
