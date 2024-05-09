@@ -23,7 +23,7 @@ func GetMain(r *http.Request) *Context {
 }
 
 func setMain(r *http.Request, ctx *Context) {
-	*r = *(r.Clone(context.WithValue(r.Context(), main_nix_context_key, ctx)))
+	*r = *(r.WithContext(context.WithValue(r.Context(), main_nix_context_key, ctx)))
 }
 
 type Context struct {
@@ -142,7 +142,7 @@ func serveContext(ctx *Context, handlerFunc func(*Context)) {
 				}
 			}
 	
-			ctx.logHTTPPanic(ctx.getMetrics())
+			go ctx.logHTTPPanic(ctx.getMetrics())
 			return
 		}
 	} else {
@@ -161,14 +161,16 @@ func serveContext(ctx *Context, handlerFunc func(*Context)) {
 		return
 	}
 
-	metrics := ctx.getMetrics()
+	go func() {
+		metrics := ctx.getMetrics()
 
-	switch {
-	case metrics.Code < 400:
-		ctx.logHTTPInfo(metrics)
-	case metrics.Code >= 400 && metrics.Code < 500:
-		ctx.logHTTPWarning(metrics)
-	default:
-		ctx.logHTTPError(metrics)
-	}
+		switch {
+		case metrics.Code < 400:
+			ctx.logHTTPInfo(metrics)
+		case metrics.Code >= 400 && metrics.Code < 500:
+			ctx.logHTTPWarning(metrics)
+		default:
+			ctx.logHTTPError(metrics)
+		}
+	}()
 }

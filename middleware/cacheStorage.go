@@ -3,7 +3,6 @@ package middleware
 import (
 	"errors"
 	"io"
-	"sync"
 	"time"
 
 	"github.com/nixpare/broadcaster"
@@ -16,31 +15,33 @@ type cacheStorage struct {
 	info       ContentInfo
 	expiration time.Time
 	bc         *broadcaster.Broadcaster[struct{}]
-	mutex      sync.RWMutex
 }
 
-func (c *Cache) NewContent(content Content) {
-	c.newContent(content)
+func (c *Cache) NewContent(content Content) error {
+	_, err := c.newContent(content)
+	return err
 }
 
-func (c *Cache) newContent(content Content) *cacheStorage {
+func (c *Cache) newContent(content Content) (*cacheStorage, error) {
 	cs := &cacheStorage{
 		cache: c,
 		content: content,
 		bc: broadcaster.NewBroadcaster[struct{}](),
 	}
 
+	err := cs.update()
+	if err != nil {
+		return nil, err
+	}
+
 	c.mutex.Lock()
 	c.storage[content.URI()] = cs
 	c.mutex.Unlock()
 
-	return cs
+	return cs, nil
 }
 
 func (s *cacheStorage) update() error {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-	
 	s.expiration = time.Now().Add(s.cache.ttl)
 
 	info, err := s.content.Info()
@@ -64,9 +65,6 @@ func (s *cacheStorage) update() error {
 	}
 
 	go func() {
-		s.mutex.RLock()
-		defer s.mutex.RUnlock()
-
 		defer reader.Close()
 		_, _ = io.Copy(s, reader)
 	}()
@@ -107,9 +105,6 @@ type cacheReader struct {
 
 // Read is used to implement the io.Reader interface
 func (r *cacheReader) Read(p []byte) (n int, err error) {
-	r.cs.mutex.RLock()
-	defer r.cs.mutex.RUnlock()
-
 	if len(p) == 0 {
 		return 0, nil // Reading no data
 	}
@@ -142,9 +137,6 @@ func (r *cacheReader) Read(p []byte) (n int, err error) {
 
 // Seek is used to implement the io.Seeker interface
 func (r *cacheReader) Seek(offset int64, whence int) (int64, error) {
-	r.cs.mutex.RLock()
-	defer r.cs.mutex.RUnlock()
-
 	switch whence {
 	case io.SeekStart:
 		r.offset = offset

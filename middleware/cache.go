@@ -35,12 +35,12 @@ type Cache struct {
 	storage  map[string]*cacheStorage
     ttl      time.Duration
     exts     []string
-	mutex    sync.RWMutex
+	mutex    *sync.RWMutex
 	logger   *log.Logger
     disabled bool
 }
 
-func NewCache(logger *log.Logger, dir string, ttl time.Duration, extensions []string, contents ...Content) *Cache {
+func NewCache(logger *log.Logger, dir string, ttl time.Duration, extensions []string, contents ...Content) (*Cache, error) {
 	if logger == nil {
 		logger = log.Default()
 	}
@@ -55,14 +55,18 @@ func NewCache(logger *log.Logger, dir string, ttl time.Duration, extensions []st
 		storage: make(map[string]*cacheStorage),
         ttl:     ttl,
         exts:    extensions,
+		mutex:   new(sync.RWMutex),
 		logger:  logger,
 	}
 
 	for _, content := range contents {
-		c.NewContent(content)
+		err := c.NewContent(content)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	return c
+	return c, nil
 }
 
 func (c *Cache) SetFileCacheTTL(ttl time.Duration) {
@@ -150,9 +154,9 @@ func (c *Cache) DumpStatus() string {
 		sb.WriteString(uri)
 		sb.WriteString("\" -> Size: ")
 		sb.WriteString(utility.PrintBytes(len(cs.data)))
-		sb.WriteString("\" - Last Modify: ")
+		sb.WriteString(" - Last Modify: ")
 		sb.WriteString(cs.info.Modtime.Format(time.DateTime))
-		sb.WriteString("\" - Expiration: ")
+		sb.WriteString(" - Expiration: ")
 		sb.WriteString(cs.expiration.Format(time.DateTime))
 	}
 
@@ -169,11 +173,22 @@ func (c *Cache) ServeContent(w http.ResponseWriter, r *http.Request, uri string)
 	c.mutex.RUnlock()
 
 	if cs == nil {
-		var ( staticPath string; skipped bool )
-		cs, staticPath, skipped = c.getStaticFile(uri)
+		var ( staticPath string; skipped bool; err error )
+		cs, staticPath, skipped, err = c.getStaticFile(uri)
 		
 		if skipped {
 			http.ServeFile(w, r, filepath.Join(c.dir, staticPath))
+			return
+		}
+
+		if err != nil {
+			c.logger.Printf("error getting static file at \"%s\": %v\n", staticPath, err)
+			http.Error(w, "404 not found", http.StatusNotFound)
+			return
+		}
+
+		if cs == nil {
+			http.Error(w, "404 not found", http.StatusNotFound)
 			return
 		}
 	}
@@ -183,9 +198,7 @@ func (c *Cache) ServeContent(w http.ResponseWriter, r *http.Request, uri string)
 		return
 	}
 	
-	cs.mutex.RLock()
 	expiration := cs.expiration
-	cs.mutex.RUnlock()
 
 	if expiration.Before(time.Now()) {
 		err := cs.update()
@@ -227,7 +240,7 @@ func (c *Cache) serveContentNoCache(w http.ResponseWriter, r *http.Request, cont
     http.ServeContent(w, r, content.Name(), info.Modtime, reader)
 }
 
-func (c *Cache) getStaticFile(path string) (*cacheStorage, string, bool) {
+func (c *Cache) getStaticFile(path string) (*cacheStorage, string, bool, error) {
 	uri := path
 
 	if path == "/" {
@@ -248,11 +261,20 @@ func (c *Cache) getStaticFile(path string) (*cacheStorage, string, bool) {
 		}
 	}
 	if !found {
-		return nil, path, true
+		return nil, path, true, nil
 	}
 
 	content := NewCachedFile(uri, c.dir, path)
-	return c.newContent(content), path, false
+	cs, err := c.newContent(content)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return nil, path, false, err
+		} else {
+			return nil, path, false, nil
+		}
+	}
+
+	return cs, path, false, nil
 }
 
 type cachedFile struct {

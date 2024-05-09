@@ -54,7 +54,8 @@ func (err CapturedError) Error() string {
 func (ctx *Context) writeError(data []byte, ctype string) {
 	ctx.w.Header().Set("Content-Type", ctype)
 	ctx.w.WriteHeader(ctx.code)
-	ctx.w.Write(data)
+	n, _ := ctx.w.Write(data)
+	ctx.written += int64(n)
 }
 
 // serveError serves the error in a predefines error template (if set) and only
