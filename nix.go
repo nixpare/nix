@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/nixpare/logger/v2"
+	"github.com/nixpare/logger/v3"
 	"github.com/nixpare/nix/middleware"
 )
 
@@ -60,7 +60,7 @@ func NewWrapperFunc(handler http.HandlerFunc, opts ...Option) http.HandlerFunc {
 
 type Option func(ctx *Context)
 
-func LoggerOption(l logger.Logger) Option {
+func LoggerOption(l *logger.Logger) Option {
 	return func(ctx *Context) {
 		ctx.SetLogger(l)
 	}

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nixpare/logger/v2"
+	"github.com/nixpare/logger/v3"
 )
 
 // ServeText serves a string (as raw bytes) to the client

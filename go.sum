@@ -8,8 +8,8 @@ github.com/gorilla/securecookie v1.1.2/go.mod h1:NfCASbcHqRSY+3a8tlWJwsQap2VX5pw
 github.com/jtolds/gls v4.20.0+incompatible/go.mod h1:QJZ7F/aHp+rZTRtaJ1ow/lLfFfVYBRgL+9YlvaHOwJU=
 github.com/nixpare/broadcaster v1.2.1 h1:eit04tSQgKCBvF0lFOQKaMUdVGgIvgwkQdIhvilf+vg=
 github.com/nixpare/broadcaster v1.2.1/go.mod h1:IC56SeoQvQGqaqJ06HUN5zMlCLB2NoKNOXo2zNmsp7w=
-github.com/nixpare/logger/v2 v2.2.6 h1:UJ6O2WBBAU90DDvbZX93GKSqiFmsHf9CIKt8CO5i4kI=
-github.com/nixpare/logger/v2 v2.2.6/go.mod h1:A1daE2ZoZ76YKSUqAuq7vtgiwIKjkiCQx2J3fVU8b+8=
+github.com/nixpare/logger/v3 v2.2.6 h1:UJ6O2WBBAU90DDvbZX93GKSqiFmsHf9CIKt8CO5i4kI=
+github.com/nixpare/logger/v3 v2.2.6/go.mod h1:A1daE2ZoZ76YKSUqAuq7vtgiwIKjkiCQx2J3fVU8b+8=
 github.com/nixpare/process v1.6.4 h1:qZxT5/F11SHpRmHfHFiIPC3pQzQIl8nVsfTZUAS85wg=
 github.com/nixpare/process v1.6.4/go.mod h1:7x0QIS3SnMK6Lro8doW1XD+Ppfb/Sd8n8v5GSQ+7SKo=
 github.com/smartystreets/assertions v0.0.0-20180927180507-b2de0cb4f26d/go.mod h1:OnSkiWE9lh6wB0YB77sQom3nweQdgAjqCqsofrRNTgc=

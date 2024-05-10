@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/nixpare/logger/v2"
+	"github.com/nixpare/logger/v3"
 	"github.com/nixpare/nix/middleware"
 )
 
@@ -33,7 +33,7 @@ type Context struct {
 
 	r *http.Request
 
-	l logger.Logger
+	l *logger.Logger
 
     customHostLog string
 

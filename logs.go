@@ -6,15 +6,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nixpare/logger/v2"
+	"github.com/nixpare/logger/v3"
 	"github.com/nixpare/nix/utility"
 )
 
-func (ctx *Context) Logger() logger.Logger {
+func (ctx *Context) Logger() *logger.Logger {
 	return ctx.l
 }
 
-func (ctx *Context) SetLogger(l logger.Logger) {
+func (ctx *Context) SetLogger(l *logger.Logger) {
 	ctx.l = l
 	if ctx.main != nil {
 		ctx.main.l = l
