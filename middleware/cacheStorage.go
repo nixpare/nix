@@ -48,7 +48,7 @@ func (s *cacheStorage) update() error {
 	if err != nil {
 		return err
 	}
-	if info.Modtime.Compare(s.info.Modtime) <= 0 {
+	if info.Modtime.Compare(s.info.Modtime) <= 0 && info.Size == s.length() {
 		return nil
 	}
 

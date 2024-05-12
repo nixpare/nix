@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -16,6 +17,7 @@ import (
 
 var (
 	DefaultExtensions = [...]string{ ".txt", ".html", ".css", ".js", ".json" }
+	ErrCacheDisabled = errors.New("cache disabled")
 )
 
 type Content interface {
@@ -97,30 +99,42 @@ func (c *Cache) DisableFileCache() {
 	}
 }
 
-func (c *Cache) UpdateCache() {
+func (c *Cache) UpdateCache() error {
 	c.mutex.RLock()
     defer c.mutex.RUnlock()
 
+	if c.disabled {
+        return fmt.Errorf("cache update error: %w", ErrCacheDisabled)
+    }
+
+	var errs []error
 	for path, s := range c.storage {
 		err := s.update()
 		if err != nil {
-			c.logger.Printf("error updating content at \"%s\": %v\n", path, err)
+			s.data = nil
+			errs = append(errs, fmt.Errorf("update content \"%s\": %w", path, err))
 		}
 	}
+
+	return fmt.Errorf("cache update error: %w", errors.Join(errs...))
 }
 
 func (c *Cache) UpdateContent(uri string) error {
 	c.mutex.RLock()
     defer c.mutex.RUnlock()
 
+	if c.disabled {
+        return nil
+    }
+
 	s := c.storage[uri]
 	if s == nil {
-		return fmt.Errorf("content with path \"%s\" not found", uri)
+		return fmt.Errorf("content update error: \"%s\" not found", uri)
 	}
 
 	err := s.update()
 	if err != nil {
-		return fmt.Errorf("error updating content at \"%s\": %v", uri, err)
+		return fmt.Errorf("content update error for \"%s\": %w", uri, err)
 	}
 
 	return nil
@@ -200,7 +214,7 @@ func (c *Cache) ServeContent(w http.ResponseWriter, r *http.Request, uri string)
 	
 	expiration := cs.expiration
 
-	if expiration.Before(time.Now()) {
+	if cs.data == nil || expiration.Before(time.Now()) {
 		err := cs.update()
 		if err != nil {
 			c.mutex.Lock()
