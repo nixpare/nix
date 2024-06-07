@@ -21,11 +21,14 @@ func (ctx *Context) ServeFileFS(dir fs.FS, name string) {
 	http.ServeFileFS(ctx, ctx.r, dir, name)
 }
 
-func (ctx *Context) ServeCachedContent(uri string) {
-	ctx.cache.ServeStatic(ctx, ctx.r)
+func (ctx *Context) ServeCached(uri string) {
+	ctx.cache.ServeContent(ctx, ctx.r, uri)
 }
 
 func (ctx *Context) ServeStatic() {
+	if ctx.cache == nil {
+		panic("ServeStatic not implemented without cache option")
+	}
 	ctx.cache.ServeStatic(ctx, ctx.r)
 }
 
