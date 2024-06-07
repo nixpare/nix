@@ -24,6 +24,10 @@ func (ctx *Context) JSON(data []byte) {
 	ctx.Write(data)
 }
 
+func (ctx *Context) MimeType(mime string) {
+	ctx.Header().Set("Content-Type", mime)
+}
+
 func (ctx *Context) NewReverseProxy(dest string) (*httputil.ReverseProxy, error) {
 	URL, err := url.Parse(dest)
 	if err != nil {

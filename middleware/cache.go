@@ -16,7 +16,7 @@ import (
 )
 
 var (
-	DefaultExtensions = [...]string{ ".txt", ".html", ".css", ".js", ".json", ".webmanifest", ".xml" }
+	DefaultExtensions = [...]string{ ".txt", ".html", ".css", ".js", ".json", ".webmanifest", ".xml", ".ico" }
 	ErrCacheDisabled = errors.New("cache disabled")
 )
 
