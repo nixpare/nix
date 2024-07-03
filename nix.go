@@ -3,7 +3,6 @@ package nix
 import (
 	"html/template"
 	"net/http"
-	"time"
 
 	"github.com/nixpare/logger/v3"
 	"github.com/nixpare/nix/middleware"
@@ -19,12 +18,8 @@ func New(opts ...Option) *Nix {
 
 func (n *Nix) Handle(handler func(ctx *Context)) http.HandlerFunc {
     return func(w http.ResponseWriter, r *http.Request) {
-		ctx := &Context{
-			w:   w,
-			r:   r,
-			l:   logger.DefaultLogger,
-			connTime:            time.Now(),
-		}
+		ctx := newContext(w, r)
+		defer contextPool.Put(ctx)
 
 		for _, opt := range n.opts {
 			opt(ctx)

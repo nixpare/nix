@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/nixpare/logger/v3"
@@ -56,6 +57,34 @@ type Context struct {
 	cookieManager *middleware.CookieManager
 
 	cache *middleware.Cache
+}
+
+var contextPool = sync.Pool {
+	New: func() any {
+		return new(Context)
+	},
+}
+
+func newContext(w http.ResponseWriter, r *http.Request) *Context {
+	ctx := contextPool.Get().(*Context)
+
+	ctx.main = nil
+	ctx.w = w
+	ctx.r = r
+	ctx.l = logger.DefaultLogger
+	ctx.customHostLog = ""
+	ctx.connTime = time.Now()
+	ctx.enableLogging = false
+	ctx.enableErrorCapture = false
+	ctx.enableRecovery = false
+	ctx.caputedError = CapturedError{}
+	ctx.errTemplate = nil
+	ctx.code = 0
+	ctx.written = 0
+	ctx.cookieManager = nil
+	ctx.cache = nil
+
+	return ctx
 }
 
 // Header is the equivalent of the http.ResponseWriter method
