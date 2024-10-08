@@ -217,10 +217,6 @@ func (c *Cache) ServeContent(w http.ResponseWriter, r *http.Request, uri string)
 	if cs.data == nil || expiration.Before(time.Now()) {
 		err := cs.update()
 		if err != nil {
-			c.mutex.Lock()
-			delete(c.storage, uri)
-			c.mutex.Unlock()
-
 			c.logger.Printf("error updating content at \"%s\": %v\n", uri, err)
 			http.Error(w, "404 not found", http.StatusNotFound)
 			return
@@ -254,6 +250,12 @@ func (c *Cache) serveContentNoCache(w http.ResponseWriter, r *http.Request, cont
     http.ServeContent(w, r, content.Name(), info.Modtime, reader)
 }
 
+// getStaticFile returns the cache storage associated with the path provided.
+// If the boolean result is true, this means the file was skipped because of the
+// file extension not matching any cachable file extension provided in the cache
+// configuration, otherwise the file is loaded as a cached content.
+// The function returns no error and a nil cache storage if the file was not found,
+// otherwise returns any other error occurred creating the cached content.
 func (c *Cache) getStaticFile(path string) (*cacheStorage, string, bool, error) {
 	uri := path
 
