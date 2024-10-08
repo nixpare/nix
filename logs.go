@@ -73,10 +73,10 @@ func (ctx *Context) getMetrics() metrics {
 }
 
 const (
-	http_info_format    = "%s%-21s%s - %s%d %-4s%s %-50s%s - %s%s (%6d ms)%s \u279C %s%s %s(%s)%s"
-	http_warning_format = "%s%-21s%s - %s%d %-4s%s %-50s%s - %s%s (%6d ms)%s \u279C %s%s %s(%s)%s \u279C %s%s%s"
-	http_error_format   = "%s%-21s%s - %s%d %-4s%s %-50s%s - %s%s (%6d ms)%s \u279C %s%s %s(%s)%s \u279C %s%s%s"
-	http_panic_format   = "%s%-21s%s - %s%d %-4s%s %-50s%s - %s%s (%6d ms)%s \u279C %s%s %s(%s)%s \u279C %spanic: %s%s"
+	http_info_format    = "%s%-21s%s - %s%d %-4s%s %-50s%s - %s%s (%6d ms)%s \u279C  %s%s %s(%s)%s"
+	http_warning_format = "%s%-21s%s - %s%d %-4s%s %-50s%s - %s%s (%6d ms)%s \u279C  %s%s %s(%s)%s \u279C %s%s%s"
+	http_error_format   = "%s%-21s%s - %s%d %-4s%s %-50s%s - %s%s (%6d ms)%s \u279C  %s%s %s(%s)%s \u279C %s%s%s"
+	http_panic_format   = "%s%-21s%s - %s%d %-4s%s %-50s%s - %s%s (%6d ms)%s \u279C  %s%s %s(%s)%s \u279C %spanic: %s%s"
 )
 
 func getProto(ctx *Context) string {
