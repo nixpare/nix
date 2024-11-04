@@ -1,9 +1,11 @@
 package nix
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"html/template"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -54,6 +56,8 @@ type Context struct {
 
 	written int64
 
+	hijacked bool
+
 	cookieManager *middleware.CookieManager
 
 	cache *middleware.Cache
@@ -71,7 +75,7 @@ func newContext(w http.ResponseWriter, r *http.Request) *Context {
 	ctx.main = nil
 	ctx.w = w
 	ctx.r = r
-	ctx.l = logger.DefaultLogger
+	ctx.l = nil
 	ctx.customHostLog = ""
 	ctx.connTime = time.Now()
 	ctx.enableLogging = false
@@ -81,6 +85,7 @@ func newContext(w http.ResponseWriter, r *http.Request) *Context {
 	ctx.errTemplate = nil
 	ctx.code = 0
 	ctx.written = 0
+	ctx.hijacked = false
 	ctx.cookieManager = nil
 	ctx.cache = nil
 
@@ -113,7 +118,7 @@ func (ctx *Context) Write(data []byte) (int, error) {
 // but handles multiple calls, using only the first one used
 func (ctx *Context) WriteHeader(statusCode int) {
 	if ctx.code != 0 {
-		ctx.l.Printf(logger.LOG_LEVEL_WARNING, "Redundant WriteHeader call with code %d", statusCode)
+		ctx.Logger().Printf(logger.LOG_LEVEL_WARNING, "Redundant WriteHeader call with code %d", statusCode)
 		return
 	}
 
@@ -123,6 +128,16 @@ func (ctx *Context) WriteHeader(statusCode int) {
 	} else {
 		ctx.caputedError.Code = statusCode
 	}
+}
+
+func (ctx *Context) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+    hijacker, ok := ctx.w.(http.Hijacker)
+    if !ok {
+        return nil, nil, fmt.Errorf("the underlying ResponseWriter does not implement http.Hijacker")
+    }
+
+	ctx.hijacked = true
+    return hijacker.Hijack()
 }
 
 func (ctx *Context) Main() *Context {

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nixpare/logger/v3"
+	"github.com/koding/websocketproxy"
 )
 
 // ServeText serves a string (as raw bytes) to the client
@@ -28,13 +28,13 @@ func (ctx *Context) MimeType(mime string) {
 	ctx.Header().Set("Content-Type", mime)
 }
 
-func (ctx *Context) NewReverseProxy(dest string) (*httputil.ReverseProxy, error) {
+func (ctx *Context) NewReverseProxy(dest string) (http.Handler, *httputil.ReverseProxy, *websocketproxy.WebsocketProxy, error) {
 	URL, err := url.Parse(dest)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 
-	reverseProxy := &httputil.ReverseProxy {
+	httpProxy := &httputil.ReverseProxy {
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(URL)
 			pr.SetXForwarded()
@@ -72,7 +72,7 @@ func (ctx *Context) NewReverseProxy(dest string) (*httputil.ReverseProxy, error)
 			pr.Out.RequestURI += "?" + query
 			pr.Out.URL.RawQuery = query
 		},
-		ErrorLog: log.New(logger.DefaultLogger, fmt.Sprintf("Proxy [%s] ", dest), 0),
+		ErrorLog: log.New(ctx.Logger(), fmt.Sprintf("Proxy [%s -> %s] ", ctx.r.URL.String(), dest), 0),
 		ModifyResponse: func(r *http.Response) error {
 			if strings.Contains(r.Header.Get("Server"), "PareServer") {
 				r.Header.Del("Server")
@@ -81,13 +81,31 @@ func (ctx *Context) NewReverseProxy(dest string) (*httputil.ReverseProxy, error)
 		},
 	}
 
-	return reverseProxy, nil
+	wsURL := new(url.URL)
+	*wsURL = *URL
+	wsURL.Scheme = "ws"
+
+    wsProxy := websocketproxy.NewProxy(wsURL)
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        if IsWebSocketRequest(r) {
+            wsProxy.ServeHTTP(w, r)
+        } else {
+            httpProxy.ServeHTTP(w, r)
+        }
+    }), httpProxy, wsProxy, nil
+}
+
+func IsWebSocketRequest(r *http.Request) bool {
+    connectionHeader := strings.ToLower(r.Header.Get("Connection"))
+    upgradeHeader := strings.ToLower(r.Header.Get("Upgrade"))
+    return strings.Contains(connectionHeader, "upgrade") && upgradeHeader == "websocket"
 }
 
 // ReverseProxy runs a reverse proxy to the provided url. Returns an error is the
 // url could not be parsed or if an error has occurred during the connection
 func (ctx *Context) ReverseProxy(dest string) error {
-	reverseProxy, err := ctx.NewReverseProxy(dest)
+	reverseProxy, httpProxy, _, err := ctx.NewReverseProxy(dest)
 	if err != nil {
 		return err
 	}
@@ -95,7 +113,7 @@ func (ctx *Context) ReverseProxy(dest string) error {
 	var returnErr error
 	returnErrM := new(sync.Mutex)
 
-	reverseProxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+	httpProxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		returnErrM.Lock()
 		defer returnErrM.Unlock()
 		returnErr = err

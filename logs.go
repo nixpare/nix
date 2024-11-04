@@ -11,7 +11,15 @@ import (
 )
 
 func (ctx *Context) Logger() *logger.Logger {
-	return ctx.l
+	if ctx.l != nil {
+		return ctx.l
+	}
+
+	if ctx.main != nil {
+		return ctx.main.l
+	}
+
+	return logger.DefaultLogger
 }
 
 func (ctx *Context) SetLogger(l *logger.Logger) {
@@ -93,7 +101,7 @@ func getProto(ctx *Context) string {
 // logHTTPInfo logs http request with an exit code < 400
 func (ctx *Context) logHTTPInfo(m metrics) {
 	if len(ctx.caputedError.internal) == 0 {
-		ctx.l.Printf(logger.LOG_LEVEL_INFO, http_info_format,
+		ctx.Logger().Printf(logger.LOG_LEVEL_INFO, http_info_format,
 			logger.BRIGHT_BLUE_COLOR, m.RemoteAddr, logger.DEFAULT_COLOR,
 			logger.BRIGHT_GREEN_COLOR, m.Code,
 			ctx.r.Method, logger.DARK_GREEN_COLOR,
@@ -106,7 +114,7 @@ func (ctx *Context) logHTTPInfo(m metrics) {
 	} else {
 		internal := ctx.caputedError.Internal()
 
-		ctx.l.Printf(logger.LOG_LEVEL_INFO, http_warning_format,
+		ctx.Logger().Printf(logger.LOG_LEVEL_INFO, http_warning_format,
 			logger.BRIGHT_BLUE_COLOR, m.RemoteAddr, logger.DEFAULT_COLOR,
 			logger.BRIGHT_GREEN_COLOR, m.Code,
 			ctx.r.Method, logger.DARK_GREEN_COLOR,
@@ -127,7 +135,7 @@ func (ctx *Context) logHTTPWarning(m metrics) {
 		internal = strings.TrimSpace(string(ctx.caputedError.Data))
 	}
 
-	ctx.l.Printf(logger.LOG_LEVEL_WARNING, http_warning_format,
+	ctx.Logger().Printf(logger.LOG_LEVEL_WARNING, http_warning_format,
 		logger.BRIGHT_BLUE_COLOR, m.RemoteAddr, logger.DEFAULT_COLOR,
 		logger.DARK_YELLOW_COLOR, m.Code,
 		ctx.r.Method, logger.DARK_GREEN_COLOR,
@@ -147,7 +155,7 @@ func (ctx *Context) logHTTPError(m metrics) {
 		internal = strings.TrimSpace(string(ctx.caputedError.Data))
 	}
 
-	ctx.l.Printf(logger.LOG_LEVEL_ERROR, http_error_format,
+	ctx.Logger().Printf(logger.LOG_LEVEL_ERROR, http_error_format,
 		logger.BRIGHT_BLUE_COLOR, m.RemoteAddr, logger.DEFAULT_COLOR,
 		logger.DARK_RED_COLOR, m.Code,
 		ctx.r.Method, logger.DARK_GREEN_COLOR,
@@ -166,7 +174,7 @@ func (ctx *Context) logHTTPPanic(m metrics) {
 		internal = strings.TrimSpace(string(ctx.caputedError.Data))
 	}
 
-	ctx.l.Printf(logger.LOG_LEVEL_FATAL, http_panic_format,
+	ctx.Logger().Printf(logger.LOG_LEVEL_FATAL, http_panic_format,
 		logger.BRIGHT_BLUE_COLOR, m.RemoteAddr, logger.DEFAULT_COLOR,
 		logger.DARK_RED_COLOR, m.Code,
 		ctx.r.Method, logger.DARK_GREEN_COLOR,
