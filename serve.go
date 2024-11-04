@@ -88,12 +88,16 @@ func (ctx *Context) NewReverseProxy(dest string) (http.Handler, *httputil.Revers
     wsProxy := websocketproxy.NewProxy(wsURL)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        if IsWebSocketRequest(r) {
+        if ctx.IsWebSocketRequest() {
             wsProxy.ServeHTTP(w, r)
         } else {
             httpProxy.ServeHTTP(w, r)
         }
     }), httpProxy, wsProxy, nil
+}
+
+func (ctx *Context) IsWebSocketRequest() bool {
+    return IsWebSocketRequest(ctx.r)
 }
 
 func IsWebSocketRequest(r *http.Request) bool {
