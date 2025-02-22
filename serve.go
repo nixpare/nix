@@ -34,51 +34,13 @@ func (ctx *Context) NewReverseProxy(dest string) (http.Handler, *httputil.Revers
 		return nil, nil, nil, err
 	}
 
-	httpProxy := &httputil.ReverseProxy {
-		Rewrite: func(pr *httputil.ProxyRequest) {
-			pr.SetURL(URL)
-			pr.SetXForwarded()
-
-			pr.Out.RequestURI = ctx.r.RequestURI
-			
-			var query string
-            var queryMap map[string][]string = ctx.r.URL.Query()
-			if len(queryMap) != 0 {
-				first := true
-				for key, values := range queryMap {
-                    for _, value := range values {
-                        if key == "domain" || key == "subdomain" {
-                            continue
-                        }
-    
-                        if (first) {
-                            first = false
-                        } else {
-                            query += "&"
-                        }
-    
-                        switch key {
-                        case "proxy-domain":
-                            key = "domain"
-                        case "proxy-subdomain":
-                            key = "subdomain"
-                        }
-    
-                        query += key + "=" + value
-                    }
-				}
-			}
-
-			pr.Out.RequestURI += "?" + query
-			pr.Out.URL.RawQuery = query
-		},
-		ErrorLog: log.New(ctx.Logger(), fmt.Sprintf("Proxy [%s -> %s] ", ctx.r.URL.String(), dest), 0),
-		ModifyResponse: func(r *http.Response) error {
-			if strings.Contains(r.Header.Get("Server"), "PareServer") {
-				r.Header.Del("Server")
-			}
-			return nil
-		},
+	httpProxy := httputil.NewSingleHostReverseProxy(URL)
+	httpProxy.ErrorLog = log.New(ctx.Logger(), fmt.Sprintf("Proxy [%v -> %s] ", ctx.r.URL, dest), 0)
+	httpProxy.ModifyResponse = func(r *http.Response) error {
+		if strings.Contains(r.Header.Get("Server"), "PareServer") {
+			r.Header.Del("Server")
+		}
+		return nil
 	}
 
 	wsURL := new(url.URL)
@@ -88,6 +50,13 @@ func (ctx *Context) NewReverseProxy(dest string) (http.Handler, *httputil.Revers
     wsProxy := websocketproxy.NewProxy(wsURL)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				ctx.code = http.StatusBadGateway
+				ctx.AddInteralMessage(err)
+			}
+		}()
+
         if ctx.IsWebSocketRequest() {
             wsProxy.ServeHTTP(w, r)
         } else {
@@ -103,7 +72,10 @@ func (ctx *Context) IsWebSocketRequest() bool {
 func IsWebSocketRequest(r *http.Request) bool {
     connectionHeader := strings.ToLower(r.Header.Get("Connection"))
     upgradeHeader := strings.ToLower(r.Header.Get("Upgrade"))
-    return strings.Contains(connectionHeader, "upgrade") && upgradeHeader == "websocket"
+	
+    return (r.Method == http.MethodGet || r.Method == http.MethodConnect) &&
+		strings.Contains(connectionHeader, "upgrade") &&
+		upgradeHeader == "websocket"
 }
 
 // ReverseProxy runs a reverse proxy to the provided url. Returns an error is the
@@ -120,7 +92,7 @@ func (ctx *Context) ReverseProxy(dest string) error {
 	httpProxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		returnErrM.Lock()
 		defer returnErrM.Unlock()
-		returnErr = err
+		returnErr = fmt.Errorf("http reverse proxy error: %w", err)
 	}
 
 	reverseProxy.ServeHTTP(ctx, ctx.r)

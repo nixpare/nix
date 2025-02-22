@@ -196,7 +196,6 @@ func (c *Cache) ServeContent(w http.ResponseWriter, r *http.Request, uri string)
 		}
 
 		if err != nil {
-			c.logger.Printf("error getting static file at \"%s\": %v\n", staticPath, err)
 			http.Error(w, "404 not found", http.StatusNotFound)
 			return
 		}

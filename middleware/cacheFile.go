@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -38,6 +39,7 @@ func (f cachedFile) Name() string {
 func (f cachedFile) Info() (cInfo ContentInfo, err error) {
 	info, err := os.Stat(f.path)
 	if err != nil {
+		err = fmt.Errorf("stat: %w", err)
 		return
 	}
 
@@ -46,7 +48,7 @@ func (f cachedFile) Info() (cInfo ContentInfo, err error) {
 }
 
 func (f cachedFile) Reader() (io.ReadSeekCloser, error) {
-	file, err := os.Open(f.path)
+	file, err := os.OpenFile(f.path, os.O_RDONLY, 0)
 	if err != nil {
 		return nil, err
 	}

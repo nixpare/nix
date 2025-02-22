@@ -123,7 +123,7 @@ func (ctx *Context) WriteHeader(statusCode int) {
 	}
 
 	ctx.code = statusCode
-	if statusCode < 400 || !ctx.enableErrorCapture {
+	if !ctx.hijacked && (statusCode < 400 || !ctx.enableErrorCapture) {
 		ctx.w.WriteHeader(statusCode)
 	} else {
 		ctx.caputedError.Code = statusCode
@@ -186,7 +186,7 @@ func serveContext(ctx *Context, handlerFunc func(*Context)) {
 				}
 			}
 	
-			go ctx.logHTTPPanic(ctx.getMetrics())
+			ctx.logHTTPPanic(ctx.getMetrics())
 			return
 		}
 	} else {
@@ -205,16 +205,14 @@ func serveContext(ctx *Context, handlerFunc func(*Context)) {
 		return
 	}
 
-	go func() {
-		metrics := ctx.getMetrics()
+	metrics := ctx.getMetrics()
 
-		switch {
-		case metrics.Code < 400:
-			ctx.logHTTPInfo(metrics)
-		case metrics.Code >= 400 && metrics.Code < 500:
-			ctx.logHTTPWarning(metrics)
-		default:
-			ctx.logHTTPError(metrics)
-		}
-	}()
+	switch {
+	case metrics.Code < 400:
+		ctx.logHTTPInfo(metrics)
+	case metrics.Code >= 400 && metrics.Code < 500:
+		ctx.logHTTPWarning(metrics)
+	default:
+		ctx.logHTTPError(metrics)
+	}
 }
