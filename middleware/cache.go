@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -40,9 +40,10 @@ type Cache struct {
 	mutex    *sync.RWMutex
 	logger   *log.Logger
     disabled bool
+	notFoundHandler http.HandlerFunc
 }
 
-func NewCache(logger *log.Logger, dir string, ttl time.Duration, extensions []string, contents ...Content) (*Cache, error) {
+func NewCache(logger *log.Logger, dir string, ttl time.Duration, extensions []string, opts ...Option) (*Cache, error) {
 	if logger == nil {
 		logger = log.Default()
 	}
@@ -61,8 +62,8 @@ func NewCache(logger *log.Logger, dir string, ttl time.Duration, extensions []st
 		logger:  logger,
 	}
 
-	for _, content := range contents {
-		err := c.NewContent(content)
+	for _, opt := range opts {
+		err = opt(c)
 		if err != nil {
 			return nil, err
 		}
@@ -196,12 +197,17 @@ func (c *Cache) ServeContent(w http.ResponseWriter, r *http.Request, uri string)
 		}
 
 		if err != nil {
-			http.Error(w, "404 not found", http.StatusNotFound)
+			http.Error(w, "500 error retreiving content", http.StatusInternalServerError)
+			c.logger.Printf("error creating cached content at \"%s\": %v\n", uri, err)
 			return
 		}
 
 		if cs == nil {
-			http.Error(w, "404 not found", http.StatusNotFound)
+			if c.notFoundHandler != nil {
+				c.notFoundHandler(w, r)
+			} else {
+				http.Error(w, "404 not found", http.StatusNotFound)
+			}
 			return
 		}
 	}
@@ -282,7 +288,7 @@ func (c *Cache) getStaticFile(path string) (*cacheStorage, string, bool, error) 
 	content := NewCachedFile(uri, c.dir, path)
 	cs, err := c.newContent(content)
 	if err != nil {
-		if !os.IsNotExist(err) {
+		if !errors.Is(err, fs.ErrNotExist) {
 			return nil, path, false, err
 		} else {
 			return nil, path, false, nil
@@ -290,4 +296,26 @@ func (c *Cache) getStaticFile(path string) (*cacheStorage, string, bool, error) 
 	}
 
 	return cs, path, false, nil
+}
+
+type Option func(cache *Cache) error
+
+func CustomContentOption(contents ...Content) Option {
+	return func(c *Cache) error {
+		for _, content := range contents {
+			err := c.NewContent(content)
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}
+}
+
+func NotFoundHandlerOption(h http.HandlerFunc) Option {
+	return func(c *Cache) error {
+		c.notFoundHandler = h
+		return nil
+	}
 }

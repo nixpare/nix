@@ -86,6 +86,12 @@ func (ctx *Context) serveError() {
 		return
 	}
 
+	accept := ctx.R().Header.Get("Accept")
+	if !strings.Contains(accept, "text/html") {
+		ctx.writeError(ctx.caputedError.Data, ctype)
+		return
+	}
+
 	b := bytes.NewBuffer(nil)
 	if err := ctx.errTemplate.Execute(b, ctx.caputedError); err != nil {
 		ctx.AddInteralMessage("Error serving template file:", err)
