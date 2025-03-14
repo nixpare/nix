@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/nixpare/nix/utility"
+	"slices"
 )
 
 var (
@@ -269,19 +270,25 @@ func (c *Cache) getStaticFile(path string) (*cacheStorage, string, bool, error) 
 	}
 
 	ext := filepath.Ext(path)
-	if ext == "" {
-		ext = ".html"
-		path += ext
+	if ext != "" {
+		return c.getStaticFileParsed(uri, path)
 	}
 
-	var found bool
-	for _, e := range c.exts {
-		if e == ext {
-			found = true
-			break
+	options := []string{ path + ".html", path + "/index.html" }
+	for _, option := range options {
+		cs, path, skipped, err := c.getStaticFileParsed(uri, option)
+		if cs != nil || skipped || err != nil {
+			return cs, path, skipped, err
 		}
 	}
-	if !found {
+
+	return nil, path, false, nil
+}
+
+func (c *Cache) getStaticFileParsed(uri string, path string) (*cacheStorage, string, bool, error) {
+	ext := filepath.Ext(path)
+
+	if !slices.Contains(c.exts, ext) {
 		return nil, path, true, nil
 	}
 
@@ -290,9 +297,11 @@ func (c *Cache) getStaticFile(path string) (*cacheStorage, string, bool, error) 
 	if err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
 			return nil, path, false, err
-		} else {
-			return nil, path, false, nil
 		}
+
+		// This indicate that the file is just not existing
+		// so it is handled as a soft error
+		return nil, path, false, nil
 	}
 
 	return cs, path, false, nil
