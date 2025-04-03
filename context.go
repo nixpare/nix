@@ -15,6 +15,7 @@ import (
 )
 
 type mainNixContextKey string
+
 const main_nix_context_key mainNixContextKey = "github.com/nixpare/nix.Context"
 
 func GetMain(r *http.Request) *Context {
@@ -31,14 +32,16 @@ func setMain(r *http.Request, ctx *Context) {
 
 type Context struct {
 	main *Context
-	
+
 	w http.ResponseWriter
 
 	r *http.Request
 
 	l *logger.Logger
 
-    customHostLog string
+	remoteAddr string
+
+	customHostLog string
 
 	connTime time.Time
 
@@ -63,7 +66,7 @@ type Context struct {
 	cache *middleware.Cache
 }
 
-var contextPool = sync.Pool {
+var contextPool = sync.Pool{
 	New: func() any {
 		return new(Context)
 	},
@@ -76,6 +79,7 @@ func newContext(w http.ResponseWriter, r *http.Request) *Context {
 	ctx.w = w
 	ctx.r = r
 	ctx.l = nil
+	ctx.remoteAddr = r.RemoteAddr
 	ctx.customHostLog = ""
 	ctx.connTime = time.Now()
 	ctx.enableLogging = false
@@ -131,13 +135,13 @@ func (ctx *Context) WriteHeader(statusCode int) {
 }
 
 func (ctx *Context) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-    hijacker, ok := ctx.w.(http.Hijacker)
-    if !ok {
-        return nil, nil, fmt.Errorf("the underlying ResponseWriter does not implement http.Hijacker")
-    }
+	hijacker, ok := ctx.w.(http.Hijacker)
+	if !ok {
+		return nil, nil, fmt.Errorf("the underlying ResponseWriter does not implement http.Hijacker")
+	}
 
 	ctx.hijacked = true
-    return hijacker.Hijack()
+	return hijacker.Hijack()
 }
 
 func (ctx *Context) Main() *Context {
@@ -162,7 +166,7 @@ func serveContext(ctx *Context, handlerFunc func(*Context)) {
 			handlerFunc(ctx)
 			return nil
 		})
-	
+
 		if panicErr != nil {
 			if ctx.code == 0 {
 				ctx.Error(http.StatusInternalServerError, "Internal server error", panicErr)
@@ -173,7 +177,7 @@ func serveContext(ctx *Context, handlerFunc func(*Context)) {
 				if ctx.written == 0 {
 					ctx.serveError()
 				}
-	
+
 				if len(ctx.caputedError.internal) == 0 {
 					ctx.caputedError.internal = []string{fmt.Sprintf("panic after response: %v", panicErr)}
 				} else {
@@ -185,7 +189,7 @@ func serveContext(ctx *Context, handlerFunc func(*Context)) {
 					)}
 				}
 			}
-	
+
 			ctx.logHTTPPanic(ctx.getMetrics())
 			return
 		}

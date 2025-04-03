@@ -73,10 +73,10 @@ type metrics struct {
 // getMetrics returns a view of the h captured connection metrics
 func (ctx *Context) getMetrics() metrics {
 	return metrics{
-		Code:     ctx.code,
-		Duration: time.Since(ctx.connTime),
-		Written:  ctx.written,
-		RemoteAddr: ctx.r.RemoteAddr,
+		Code:       ctx.code,
+		Duration:   time.Since(ctx.connTime),
+		Written:    ctx.written,
+		RemoteAddr: ctx.remoteAddr,
 	}
 }
 
